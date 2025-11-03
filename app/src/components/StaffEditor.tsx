@@ -12,12 +12,23 @@ interface StaffEditorProps {
 export default function StaffEditor({ staff, allShifts, onSave, onClose }: StaffEditorProps) {
   const [formData, setFormData] = useState<Person>(staff);
 
+  const weekdays = ["月", "火", "水", "木", "金", "土", "日"];
+
   const toggleShift = (shiftCode: string) => {
     setFormData((prev) => {
       const canWork = prev.canWork.includes(shiftCode)
         ? prev.canWork.filter((code) => code !== shiftCode)
         : [...prev.canWork, shiftCode];
       return { ...prev, canWork };
+    });
+  };
+
+  const toggleFixedOffWeekday = (weekday: string) => {
+    setFormData((prev) => {
+      const fixedOffWeekdays = prev.fixedOffWeekdays.includes(weekday)
+        ? prev.fixedOffWeekdays.filter((value) => value !== weekday)
+        : [...prev.fixedOffWeekdays, weekday];
+      return { ...prev, fixedOffWeekdays };
     });
   };
 
@@ -59,6 +70,22 @@ export default function StaffEditor({ staff, allShifts, onSave, onClose }: Staff
                   <span>
                     {shift.name} ({shift.code})
                   </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="block font-semibold mb-2">固定休（曜日）</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {weekdays.map((weekday) => (
+                <label key={weekday} className="flex items-center gap-2 p-2 border rounded-md">
+                  <input
+                    type="checkbox"
+                    checked={formData.fixedOffWeekdays.includes(weekday)}
+                    onChange={() => toggleFixedOffWeekday(weekday)}
+                  />
+                  <span>{weekday}</span>
                 </label>
               ))}
             </div>
