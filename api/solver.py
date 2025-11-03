@@ -63,6 +63,37 @@ def solve_shift_scheduling(request: ScheduleRequest):
         for d in range(num_days):
             model.Add(sum(work[p, d, s_code] for s_code in all_shift_codes) <= 1)
 
+    # Shift eligibility
+    for p in range(num_people):
+        allowed = set(people[p].canWork)
+        for d in range(num_days):
+            for s_code in all_shift_codes:
+                if s_code not in allowed:
+                    model.Add(work[p, d, s_code] == 0)
+                    
+    # Monthly minimum/maximum assignments
+    for p in range(num_people):
+        total_days = sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes)
+        model.Add(total_days >= people[p].monthlyMin)
+        model.Add(total_days <= people[p].monthlyMax)
+
+
+
+    # Night shift rest enforcement
+    night_rest: Dict[str, int] = data["rules"]["nightRest"]
+    for p in range(num_people):
+        can_work = set(people[p].canWork)
+        for night_code, rest_days in night_rest.items():
+            if night_code not in can_work:
+                continue
+            for d in range(num_days):
+                if d + rest_days >= num_days:
+                    continue
+                night_work = work[p, d, night_code]
+                for offset in range(1, rest_days + 1):
+                    for s_code in all_shift_codes:
+                        model.Add(work[p, d + offset, s_code] == 0).OnlyEnforceIf(night_work)
+    
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
     start_weekday = data["weekdayOfDay1"] % 7
