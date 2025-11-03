@@ -63,62 +63,6 @@ def solve_shift_scheduling(request: ScheduleRequest):
         for d in range(num_days):
             model.Add(sum(work[p, d, s_code] for s_code in all_shift_codes) <= 1)
 
-    # Shift eligibility
-    for p in range(num_people):
-        allowed = set(people[p].canWork)
-        for d in range(num_days):
-            for s_code in all_shift_codes:
-                if s_code not in allowed:
-                    model.Add(work[p, d, s_code] == 0)
-
-    # Monthly minimum/maximum assignments
-    for p in range(num_people):
-        total_days = sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes)
-        model.Add(total_days >= people[p].monthlyMin)
-        model.Add(total_days <= people[p].monthlyMax)
-
-    # Weekly maximum/minimum using sliding windows of 7 days
-    for p in range(num_people):
-        weekly_min = people[p].weeklyMin
-        weekly_max = people[p].weeklyMax
-        for start in range(0, num_days, 7):
-            end = min(start + 7, num_days)
-            window_length = end - start
-            window_total = sum(
-                work[p, d, s_code] for d in range(start, end) for s_code in all_shift_codes
-            )
-            model.Add(window_total <= weekly_max)
-            if weekly_min > 0:
-                model.Add(window_total >= min(weekly_min, window_length))
-
-    # Consecutive working days limit
-    for p in range(num_people):
-        consec_max = people[p].consecMax
-        if consec_max <= 0:
-            continue
-        for d in range(num_days - consec_max):
-            window = sum(
-                work[p, day, s_code]
-                for day in range(d, d + consec_max + 1)
-                for s_code in all_shift_codes
-            )
-            model.Add(window <= consec_max)
-
-    # Night shift rest enforcement
-    night_rest: Dict[str, int] = data["rules"]["nightRest"]
-    for p in range(num_people):
-        can_work = set(people[p].canWork)
-        for night_code, rest_days in night_rest.items():
-            if night_code not in can_work:
-                continue
-            for d in range(num_days):
-                if d + rest_days >= num_days:
-                    continue
-                night_work = work[p, d, night_code]
-                for offset in range(1, rest_days + 1):
-                    for s_code in all_shift_codes:
-                        model.Add(work[p, d + offset, s_code] == 0).OnlyEnforceIf(night_work)
-
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
     start_weekday = data["weekdayOfDay1"] % 7
