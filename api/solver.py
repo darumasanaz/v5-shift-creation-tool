@@ -101,14 +101,6 @@ def solve_shift_scheduling(request: ScheduleRequest):
             penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
             shortage_vars[(d, label)] = shortage
 
-    # Balance total work days among staff
-    totals = [sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes) for p in range(num_people)]
-    min_work = model.NewIntVar(0, num_days, "min_work")
-    max_work = model.NewIntVar(0, num_days, "max_work")
-    model.AddMinEquality(min_work, totals)
-    model.AddMaxEquality(max_work, totals)
-    penalties.append((max_work - min_work) * weights["W_balance_workdays"])
-
     model.Minimize(sum(penalties))
 
     solver = cp_model.CpSolver()
