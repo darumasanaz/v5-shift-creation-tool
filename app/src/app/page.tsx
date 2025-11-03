@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { InitialData, Person, Schedule, ScheduleResponse, ShortageInfo, WishOffs } from "../types";
+import { buildScheduleMatrix, toCsvString } from "../utils/export";
 import Calendar from "../components/Calendar";
 import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
@@ -17,6 +18,15 @@ export default function Home() {
   const [selectedStaff, setSelectedStaff] = useState<Person | null>(null);
   const [editingStaff, setEditingStaff] = useState<Person | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [csvUrl, setCsvUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (csvUrl) {
+        URL.revokeObjectURL(csvUrl);
+      }
+    };
+  }, [csvUrl]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -72,6 +82,30 @@ export default function Home() {
     }
   };
 
+  const handleExportSchedule = () => {
+    if (!initialData) {
+      return;
+    }
+
+    const matrix = buildScheduleMatrix(people, schedule, initialData.days);
+    const csvString = toCsvString(matrix);
+    const blob = new Blob(["\ufeff" + csvString], { type: "text/csv" });
+
+    if (csvUrl) {
+      URL.revokeObjectURL(csvUrl);
+    }
+
+    const url = URL.createObjectURL(blob);
+    setCsvUrl(url);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `shift_schedule_${initialData.year}_${initialData.month}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleUpdateStaff = (updatedStaff: Person) => {
     setPeople((prev) => prev.map((person) => (person.id === updatedStaff.id ? updatedStaff : person)));
     setEditingStaff(null);
@@ -88,13 +122,21 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-gray-800">Shift Scheduler v5</h1>
           {statusMessage && <p className="text-sm text-gray-500 mt-1">状態: {statusMessage}</p>}
         </div>
-        <button
-          onClick={handleGenerateSchedule}
-          disabled={isLoading}
-          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400"
-        >
-          {isLoading ? "作成中..." : "シフトを作成する"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleExportSchedule}
+            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
+          >
+            エクスポート
+          </button>
+          <button
+            onClick={handleGenerateSchedule}
+            disabled={isLoading}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400"
+          >
+            {isLoading ? "作成中..." : "シフトを作成する"}
+          </button>
+        </div>
       </header>
 
       <main className="flex-grow flex p-4 gap-4 overflow-hidden">
