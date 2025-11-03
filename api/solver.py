@@ -77,8 +77,6 @@ def solve_shift_scheduling(request: ScheduleRequest):
         model.Add(total_days >= people[p].monthlyMin)
         model.Add(total_days <= people[p].monthlyMax)
 
-
-
     # Night shift rest enforcement
     night_rest: Dict[str, int] = data["rules"]["nightRest"]
     for p in range(num_people):
@@ -93,6 +91,19 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 for offset in range(1, rest_days + 1):
                     for s_code in all_shift_codes:
                         model.Add(work[p, d + offset, s_code] == 0).OnlyEnforceIf(night_work)
+    
+    # Consecutive working days limit
+    for p in range(num_people):
+        consec_max = people[p].consecMax
+        if consec_max <= 0:
+            continue
+        for d in range(num_days - consec_max):
+            window = sum(
+                work[p, day, s_code]
+                for day in range(d, d + consec_max + 1)
+                for s_code in all_shift_codes
+            )
+            model.Add(window <= consec_max)
     
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
