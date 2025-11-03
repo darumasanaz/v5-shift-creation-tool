@@ -1,87 +1,195 @@
 import json
+from typing import Dict, List, Optional, Tuple
+
 from ortools.sat.python import cp_model
-from .models import ScheduleRequest
+
+from .models import ScheduleRequest, ShortageInfo
+
+
+def _load_initial_data() -> Dict:
+    with open("api/input_data.json", "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]]:
+    intervals: Dict[str, Tuple[int, int]] = {
+        "7-9": (7, 9),
+        "9-15": (9, 15),
+        "16-18": (16, 18),
+        "18-24": (18, 24),
+        "0-7": (24, 31),  # treat as 24-31 to account for night shifts
+    }
+
+    def covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
+        start, end = interval
+        # If interval is post-midnight (>=24), allow wrap
+        if end <= 24:
+            effective_end = min(shift_end, 24)
+            return shift_start < end and effective_end > start
+        # Interval spans post-midnight hours
+        if shift_end <= 24:
+            return False
+        return shift_end > start
+
+    time_ranges: Dict[str, List[str]] = {key: [] for key in intervals}
+    for code, shift in shifts.items():
+        for label, interval in intervals.items():
+            if covers_interval(shift["start"], shift["end"], interval):
+                time_ranges[label].append(code)
+    return time_ranges
+
 
 def solve_shift_scheduling(request: ScheduleRequest):
-    try:
-        with open("api/input_data.json", "r", encoding="utf-8") as f:
-            input_data = json.load(f)
+    data = _load_initial_data()
 
-        # 基本データの読み込み
-        people_contracts = {p["personId"]: p for p in request.people}
-        people_data = input_data["people"]
-        num_people = len(people_data)
-        people_map = {p["id"]: i for i, p in enumerate(people_data)}
-        people_map_rev = {i: p["id"] for i, p in enumerate(people_data)}
+    num_days = data["days"]
+    people = request.people
+    num_people = len(people)
+    shifts = {s["code"]: s for s in data["shifts"]}
+    all_shift_codes = list(shifts.keys())
+    time_ranges = _build_time_ranges(shifts)
 
-        num_days = input_data["num_days"]
-        shifts_data = input_data["shifts"]
-        
-        all_shift_codes = [s["code"] for s in shifts_data]
-        
-        # モデルの初期化
-        model = cp_model.CpModel()
+    model = cp_model.CpModel()
 
-        # --- 決定変数の作成 ---
-        work = {}
-        for i in range(num_people):
-            p_id = people_map_rev[i]
-            person_contract = people_contracts.get(p_id)
-            if not person_contract: continue
+    work = {}
+    for p in range(num_people):
+        for d in range(num_days):
+            for s_code in all_shift_codes:
+                work[p, d, s_code] = model.NewBoolVar(f"work_{p}_{d}_{s_code}")
 
-            qualified_shift_codes = person_contract.get("qualifiedShifts", all_shift_codes)
-            
+    # Hard constraints -----------------------------------------------------
+    # At most one shift per person per day
+    for p in range(num_people):
+        for d in range(num_days):
+            model.Add(sum(work[p, d, s_code] for s_code in all_shift_codes) <= 1)
+
+    # Shift eligibility
+    for p in range(num_people):
+        allowed = set(people[p].canWork)
+        for d in range(num_days):
+            for s_code in all_shift_codes:
+                if s_code not in allowed:
+                    model.Add(work[p, d, s_code] == 0)
+
+    # Monthly minimum/maximum assignments
+    for p in range(num_people):
+        total_days = sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes)
+        model.Add(total_days >= people[p].monthlyMin)
+        model.Add(total_days <= people[p].monthlyMax)
+
+    # Weekly maximum/minimum using sliding windows of 7 days
+    for p in range(num_people):
+        weekly_min = people[p].weeklyMin
+        weekly_max = people[p].weeklyMax
+        for start in range(0, num_days, 7):
+            end = min(start + 7, num_days)
+            window_length = end - start
+            window_total = sum(
+                work[p, d, s_code] for d in range(start, end) for s_code in all_shift_codes
+            )
+            model.Add(window_total <= weekly_max)
+            if weekly_min > 0:
+                model.Add(window_total >= min(weekly_min, window_length))
+
+    # Consecutive working days limit
+    for p in range(num_people):
+        consec_max = people[p].consecMax
+        if consec_max <= 0:
+            continue
+        for d in range(num_days - consec_max):
+            window = sum(
+                work[p, day, s_code]
+                for day in range(d, d + consec_max + 1)
+                for s_code in all_shift_codes
+            )
+            model.Add(window <= consec_max)
+
+    # Night shift rest enforcement
+    night_rest: Dict[str, int] = data["rules"]["nightRest"]
+    for p in range(num_people):
+        can_work = set(people[p].canWork)
+        for night_code, rest_days in night_rest.items():
+            if night_code not in can_work:
+                continue
             for d in range(num_days):
-                for s_code in qualified_shift_codes:
-                    work[i, d, s_code] = model.NewBoolVar(f"work_{i}_{d}_{s_code}")
+                if d + rest_days >= num_days:
+                    continue
+                night_work = work[p, d, night_code]
+                for offset in range(1, rest_days + 1):
+                    for s_code in all_shift_codes:
+                        model.Add(work[p, d + offset, s_code] == 0).OnlyEnforceIf(night_work)
 
-        # --- ハード制約 ---
+    # Fixed off weekdays and requested days off
+    weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
+    start_weekday = data["weekdayOfDay1"] % 7
+    wish_offs = request.wishOffs or {}
 
-        # H1: 1人のスタッフは1日に最大1つのシフトしか担当できない (これを残します)
-        for i in range(num_people):
+    for p in range(num_people):
+        fixed_off = set(people[p].fixedOffWeekdays)
+        for d in range(num_days):
+            weekday = weekday_map[(start_weekday + d) % 7]
+            if weekday in fixed_off:
+                for s_code in all_shift_codes:
+                    model.Add(work[p, d, s_code] == 0)
+        requested = set(wish_offs.get(people[p].id, []))
+        for d in requested:
+            if 0 <= d < num_days:
+                for s_code in all_shift_codes:
+                    model.Add(work[p, d, s_code] == 0)
+
+    # Soft constraints -----------------------------------------------------
+    penalties: List[cp_model.LinearExpr] = []
+    shortage_vars: Dict[Tuple[int, str], cp_model.IntVar] = {}
+
+    weights = data["weights"]
+
+    for d in range(num_days):
+        day_type = data["dayTypeByDate"][d]
+        needs = data["needTemplate"][day_type]
+        for label, related_shifts in time_ranges.items():
+            need_value = needs[label]
+            actual = sum(work[p, d, s_code] for p in range(num_people) for s_code in related_shifts)
+            shortage = model.NewIntVar(0, need_value, f"shortage_{d}_{label}")
+            overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
+            model.Add(actual + shortage >= need_value)
+            model.Add(actual - overstaff <= need_value)
+            penalties.append(shortage * weights["W_shortage"])
+            penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
+            shortage_vars[(d, label)] = shortage
+
+    # Balance total work days among staff
+    totals = [sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes) for p in range(num_people)]
+    min_work = model.NewIntVar(0, num_days, "min_work")
+    max_work = model.NewIntVar(0, num_days, "max_work")
+    model.AddMinEquality(min_work, totals)
+    model.AddMaxEquality(max_work, totals)
+    penalties.append((max_work - min_work) * weights["W_balance_workdays"])
+
+    model.Minimize(sum(penalties))
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 60.0
+    status = solver.Solve(model)
+
+    schedule: Dict[str, List[Optional[str]]] = {}
+    shortages: List[ShortageInfo] = []
+
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        for p_idx, person in enumerate(people):
+            assignments: List[Optional[str]] = []
             for d in range(num_days):
-                p_id = people_map_rev[i]
-                person_contract = people_contracts.get(p_id)
-                if not person_contract: continue
-                
-                qualified_shift_codes = person_contract.get("qualifiedShifts", all_shift_codes)
-                
-                # 【修正点】変数と数字の0を混ぜないように、安全な記述に変更
-                works_on_day = [work[i, d, s_code] for s_code in qualified_shift_codes if (i, d, s_code) in work]
-                model.Add(sum(works_on_day) <= 1)
+                assigned = None
+                for s_code in all_shift_codes:
+                    if solver.Value(work[p_idx, d, s_code]):
+                        assigned = s_code
+                        break
+                assignments.append(assigned)
+            schedule[person.id] = assignments
 
-        # H2: 月間の勤務日数の制約 (コメントアウト)
-        # (省略) ...
+        for (day_idx, label), var in shortage_vars.items():
+            value = solver.Value(var)
+            if value > 0:
+                shortages.append(ShortageInfo(day=day_idx + 1, time_range=label, shortage=value))
 
-        # H3: 週間の最大勤務日数の制約 (コメントアウト)
-        # (省略) ...
-            
-        # H4: 連続勤務日数の上限の制約 (コメントアウト)
-        # (省略) ...
-            
-        # H5: 夜勤後の休みの制約 (コメントアウト)
-        # (省略) ...
-
-        # H6: 固定の曜日休みと希望休の制約 (コメントアウト)
-        # (省略) ...
-
-        # --- ソフト制約 ---
-        # (ソフト制約のコードは元のままなので省略)
-        
-        # --- 目的関数 ---
-        # (目的関数のコードは元のままなので省略)
-        
-        # --- ソルバーの実行 ---
-        solver = cp_model.CpSolver()
-        solver.parameters.max_time_in_seconds = 60.0 # タイムアウトを60秒に設定
-        status = solver.Solve(model)
-
-        # --- 結果の整形 ---
-        # (結果整形コードは元のままなので省略)
-
-        # (最終的なreturn文も元のままなので省略)
-
-    except Exception as e:
-        print(f"An error occurred in solver: {e}")
-        # エラーが発生した場合は、空のスケジュールとエラーメッセージを返す
-        return {}, {}, "SOLVER_ERROR"
+    status_name = solver.StatusName(status)
+    return schedule, shortages, status_name
