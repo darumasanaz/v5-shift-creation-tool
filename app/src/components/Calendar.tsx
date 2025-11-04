@@ -1,4 +1,4 @@
-import { Person, Schedule, ShortageInfo, WishOffs } from "../types";
+import { Person, Schedule, WishOffs } from "../types";
 
 interface CalendarProps {
   year: number;
@@ -10,7 +10,6 @@ interface CalendarProps {
   wishOffs: WishOffs;
   selectedStaff: Person | null;
   onWishOffToggle: (personId: string, dayIndex: number) => void;
-  shortagesByDay: Record<number, ShortageInfo[]>;
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -25,7 +24,6 @@ export default function Calendar({
   wishOffs,
   selectedStaff,
   onWishOffToggle,
-  shortagesByDay,
 }: CalendarProps) {
   const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
 
@@ -92,30 +90,6 @@ export default function Calendar({
               })}
             </tr>
           ))}
-          <tr className="bg-amber-50">
-            <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-amber-100 z-10">
-              不足状況
-            </td>
-            {Array.from({ length: days }, (_, dayIndex) => {
-              const shortagesForDay = shortagesByDay[dayIndex] ?? [];
-              return (
-                <td key={`shortage-${dayIndex}`} className="p-2 border border-gray-300 align-top">
-                  {shortagesForDay.length === 0 ? (
-                    <span className="text-gray-300">-</span>
-                  ) : (
-                    <div className="space-y-1 text-xs text-red-700">
-                      {shortagesForDay.map((info, idx) => (
-                        <div key={`${info.day}-${info.time_range}-${idx}`}>
-                          {info.time_range}
-                          <span className="ml-1 font-semibold">{info.shortage}人不足</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </td>
-              );
-            })}
-          </tr>
         </tbody>
       </table>
     </div>
