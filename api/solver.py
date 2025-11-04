@@ -24,28 +24,22 @@ def _normalize_interval(label: str) -> Tuple[int, int]:
 def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
     interval_start, interval_end = interval
     return max(shift_start, interval_start) < min(shift_end, interval_end)
-
-
-def _shifts_covering_interval(
-    shifts: Dict[str, Dict[str, int]], interval: Tuple[int, int]
-) -> List[str]:
-    return [
-        code
-        for code, shift in shifts.items()
-        if _covers_interval(shift["start"], shift["end"], interval)
-    ]
-
-
-def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]]:
-    labels = ["7-9", "9-15", "16-18", "18-24", "0-7"]
+def _build_coverage_map(
+    shifts: Dict[str, Dict[str, int]], labels: List[str]
+) -> Dict[str, List[Tuple[str, int]]]:
     intervals: Dict[str, Tuple[int, int]] = {
         label: _normalize_interval(label) for label in labels
     }
 
-    time_ranges: Dict[str, List[str]] = {key: [] for key in intervals}
+    coverage: Dict[str, List[Tuple[str, int]]] = {label: [] for label in labels}
     for label, interval in intervals.items():
-        time_ranges[label] = _shifts_covering_interval(shifts, interval)
-    return time_ranges
+        for code, shift in shifts.items():
+            for day_offset in (0, -1):
+                shifted_start = shift["start"] + day_offset * 24
+                shifted_end = shift["end"] + day_offset * 24
+                if _covers_interval(shifted_start, shifted_end, interval):
+                    coverage[label].append((code, day_offset))
+    return coverage
 
 
 def solve_shift_scheduling(request: ScheduleRequest):
@@ -56,7 +50,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
     num_people = len(people)
     shifts = {s["code"]: s for s in data["shifts"]}
     all_shift_codes = list(shifts.keys())
-    time_ranges = _build_time_ranges(shifts)
+    time_labels = ["7-9", "9-15", "16-18", "18-24", "0-7"]
+    time_ranges = _build_coverage_map(shifts, time_labels)
 
     model = cp_model.CpModel()
 
@@ -151,8 +146,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
             bounds["min"] = value
             bounds["max"] = value
 
-    strict_shift_map: Dict[str, List[str]] = {
-        label: _shifts_covering_interval(shifts, _normalize_interval(label))
+    strict_shift_map: Dict[str, List[Tuple[str, int]]] = {
+        label: _build_coverage_map(shifts, [label]).get(label, [])
         for label in strict_bounds
     }
 
@@ -163,8 +158,17 @@ def solve_shift_scheduling(request: ScheduleRequest):
         needs = data["needTemplate"][day_type]
         for label, related_shifts in time_ranges.items():
             need_value = needs[label]
-            actual = sum(work[p, d, s_code] for p in range(num_people) for s_code in related_shifts)
-            overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
+            actual_terms: List[cp_model.LinearExpr] = []
+            for s_code, day_offset in related_shifts:
+                day_idx = d + day_offset
+                if 0 <= day_idx < num_days:
+                    actual_terms.append(
+                        sum(work[p, day_idx, s_code] for p in range(num_people))
+                    )
+            actual: cp_model.LinearExpr = sum(actual_terms)
+            overstaff = model.NewIntVar(
+                0, num_people * max(1, len(related_shifts)), f"overstaff_{d}_{label}"
+            )
             requirement_literal = model.NewBoolVar(f"need_min_{d}_{label}")
             model.Add(actual >= need_value).OnlyEnforceIf(requirement_literal)
             model.AddAssumption(requirement_literal)
@@ -182,9 +186,14 @@ def solve_shift_scheduling(request: ScheduleRequest):
             related_shifts = strict_shift_map[label]
             if not related_shifts:
                 continue
-            actual = sum(
-                work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
-            )
+            actual_terms = []
+            for s_code, day_offset in related_shifts:
+                day_idx = d + day_offset
+                if 0 <= day_idx < num_days:
+                    actual_terms.append(
+                        sum(work[p, day_idx, s_code] for p in range(num_people))
+                    )
+            actual = sum(actual_terms)
             if "min" in bounds:
                 min_literal = model.NewBoolVar(f"strict_min_{label}_{d}")
                 model.Add(actual >= bounds["min"]).OnlyEnforceIf(min_literal)
