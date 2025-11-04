@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { InitialData, Person, Schedule, ScheduleResponse, ShortageInfo, WishOffs } from "../types";
 import { buildScheduleMatrix, toCsvString } from "../utils/export";
 import Calendar from "../components/Calendar";
@@ -115,17 +115,6 @@ export default function Home() {
     return <div className="p-4">Loading initial data...</div>;
   }
 
-  const shortagesByDay = useMemo(() => {
-    return shortages.reduce<Record<number, ShortageInfo[]>>((acc, shortage) => {
-      const dayIndex = shortage.day - 1;
-      if (!acc[dayIndex]) {
-        acc[dayIndex] = [];
-      }
-      acc[dayIndex].push(shortage);
-      return acc;
-    }, {});
-  }, [shortages]);
-
   return (
     <div className="flex flex-col h-screen font-sans">
       <header className="bg-white shadow-md p-4 flex justify-between items-center">
@@ -172,9 +161,20 @@ export default function Home() {
               wishOffs={wishOffs}
               selectedStaff={selectedStaff}
               onWishOffToggle={handleWishOffToggle}
-              shortagesByDay={shortagesByDay}
             />
           </div>
+          {shortages.length > 0 && (
+            <div className="bg-white p-4 rounded-lg shadow flex-shrink-0">
+              <h3 className="font-bold mb-2 text-red-600">シフトの問題点</h3>
+              <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
+                {shortages.map((shortage, index) => (
+                  <li key={`${shortage.day}-${shortage.time_range}-${index}`} className="text-gray-700">
+                    {shortage.day}日 {shortage.time_range}: {shortage.shortage}人 不足
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </main>
 
