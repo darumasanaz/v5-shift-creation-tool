@@ -80,6 +80,7 @@ class ShortageInfo(BaseModel):
     day: int
     time_range: str
     shortage: int
+    message: Optional[str] = None
 
 
 class ScheduleResponse(BaseModel):
