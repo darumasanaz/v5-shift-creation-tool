@@ -148,23 +148,8 @@ export default function Home() {
             onEditStaff={setEditingStaff}
           />
           <ShiftDisplay selectedStaff={selectedStaff} schedule={schedule} />
-        </div>
-        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
-          <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
-            <Calendar
-              year={initialData.year}
-              month={initialData.month}
-              days={initialData.days}
-              weekdayOfDay1={initialData.weekdayOfDay1}
-              people={people}
-              schedule={schedule}
-              wishOffs={wishOffs}
-              selectedStaff={selectedStaff}
-              onWishOffToggle={handleWishOffToggle}
-            />
-          </div>
           {shortages.length > 0 && (
-            <div className="bg-white p-4 rounded-lg shadow flex-shrink-0">
+            <div className="bg-white p-4 rounded-lg shadow">
               <h3 className="font-bold mb-2 text-red-600">シフトの問題点</h3>
               <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
                 {shortages.map((shortage, index) => (
@@ -175,6 +160,19 @@ export default function Home() {
               </ul>
             </div>
           )}
+        </div>
+        <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
+          <Calendar
+            year={initialData.year}
+            month={initialData.month}
+            days={initialData.days}
+            weekdayOfDay1={initialData.weekdayOfDay1}
+            people={people}
+            schedule={schedule}
+            wishOffs={wishOffs}
+            selectedStaff={selectedStaff}
+            onWishOffToggle={handleWishOffToggle}
+          />
         </div>
       </main>
 
