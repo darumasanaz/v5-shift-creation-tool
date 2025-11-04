@@ -154,7 +154,9 @@ export default function Home() {
               <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
                 {shortages.map((shortage, index) => (
                   <li key={`${shortage.day}-${shortage.time_range}-${index}`} className="text-gray-700">
-                    {shortage.day}日 {shortage.time_range}: {shortage.shortage}人 不足
+                    {shortage.message
+                      ? shortage.message
+                      : `${shortage.day}日 ${shortage.time_range}: ${shortage.shortage}人 不足`}
                   </li>
                 ))}
               </ul>

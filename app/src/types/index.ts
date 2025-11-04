@@ -33,6 +33,7 @@ export interface ShortageInfo {
   day: number;
   time_range: string;
   shortage: number;
+  message?: string;
 }
 
 export interface ScheduleResponse {
