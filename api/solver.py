@@ -11,40 +11,31 @@ def _load_initial_data() -> Dict:
         return json.load(f)
 
 
-def _normalize_interval(label: str) -> Tuple[int, int]:
-    start_str, end_str = label.split("-")
-    start = int(start_str)
-    end = int(end_str)
-    if start == 0:
-        start = 24
-        end += 24
-    return start, end
-
-
-def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
-    interval_start, interval_end = interval
-    return max(shift_start, interval_start) < min(shift_end, interval_end)
-
-
-def _shifts_covering_interval(
-    shifts: Dict[str, Dict[str, int]], interval: Tuple[int, int]
-) -> List[str]:
-    return [
-        code
-        for code, shift in shifts.items()
-        if _covers_interval(shift["start"], shift["end"], interval)
-    ]
-
-
 def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]]:
-    labels = ["7-9", "9-15", "16-18", "18-24", "0-7"]
     intervals: Dict[str, Tuple[int, int]] = {
-        label: _normalize_interval(label) for label in labels
+        "7-9": (7, 9),
+        "9-15": (9, 15),
+        "16-18": (16, 18),
+        "18-24": (18, 24),
+        "0-7": (24, 31),  # treat as 24-31 to account for night shifts
     }
 
+    def covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
+        start, end = interval
+        # If interval is post-midnight (>=24), allow wrap
+        if end <= 24:
+            effective_end = min(shift_end, 24)
+            return shift_start < end and effective_end > start
+        # Interval spans post-midnight hours
+        if shift_end <= 24:
+            return False
+        return shift_end > start
+
     time_ranges: Dict[str, List[str]] = {key: [] for key in intervals}
-    for label, interval in intervals.items():
-        time_ranges[label] = _shifts_covering_interval(shifts, interval)
+    for code, shift in shifts.items():
+        for label, interval in intervals.items():
+            if covers_interval(shift["start"], shift["end"], interval):
+                time_ranges[label].append(code)
     return time_ranges
 
 
@@ -134,27 +125,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
 
     # Soft constraints -----------------------------------------------------
     penalties: List[cp_model.LinearExpr] = []
+    shortage_vars: Dict[Tuple[int, str], cp_model.IntVar] = {}
+
     weights = data["weights"]
-
-    strict_rules = data.get("strictNight", {})
-    strict_bounds: Dict[str, Dict[str, int]] = {}
-
-    for label, value in strict_rules.items():
-        if label.endswith("_min"):
-            base_label = label[: -len("_min")]
-            strict_bounds.setdefault(base_label, {})["min"] = value
-        elif label.endswith("_max"):
-            base_label = label[: -len("_max")]
-            strict_bounds.setdefault(base_label, {})["max"] = value
-        else:
-            bounds = strict_bounds.setdefault(label, {})
-            bounds["min"] = value
-            bounds["max"] = value
-
-    strict_shift_map: Dict[str, List[str]] = {
-        label: _shifts_covering_interval(shifts, _normalize_interval(label))
-        for label in strict_bounds
-    }
 
     for d in range(num_days):
         day_type = data["dayTypeByDate"][d]
@@ -162,22 +135,13 @@ def solve_shift_scheduling(request: ScheduleRequest):
         for label, related_shifts in time_ranges.items():
             need_value = needs[label]
             actual = sum(work[p, d, s_code] for p in range(num_people) for s_code in related_shifts)
+            shortage = model.NewIntVar(0, need_value, f"shortage_{d}_{label}")
             overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
-            model.Add(actual >= need_value)
+            model.Add(actual + shortage >= need_value)
             model.Add(actual - overstaff <= need_value)
+            penalties.append(shortage * weights["W_shortage"])
             penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
-
-        for label, bounds in strict_bounds.items():
-            related_shifts = strict_shift_map[label]
-            if not related_shifts:
-                continue
-            actual = sum(
-                work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
-            )
-            if "min" in bounds:
-                model.Add(actual >= bounds["min"])
-            if "max" in bounds:
-                model.Add(actual <= bounds["max"])
+            shortage_vars[(d, label)] = shortage
 
     model.Minimize(sum(penalties))
 
@@ -199,6 +163,11 @@ def solve_shift_scheduling(request: ScheduleRequest):
                         break
                 assignments.append(assigned)
             schedule[person.id] = assignments
+
+        for (day_idx, label), var in shortage_vars.items():
+            value = solver.Value(var)
+            if value > 0:
+                shortages.append(ShortageInfo(day=day_idx + 1, time_range=label, shortage=value))
 
     status_name = solver.StatusName(status)
     return schedule, shortages, status_name
