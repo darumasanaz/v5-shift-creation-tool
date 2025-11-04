@@ -151,13 +151,26 @@ export default function Home() {
           {shortages.length > 0 && (
             <div className="bg-white p-4 rounded-lg shadow">
               <h3 className="font-bold mb-2 text-red-600">シフトの問題点</h3>
-              <ul className="text-sm space-y-1 max-h-48 overflow-y-auto">
-                {shortages.map((shortage, index) => (
-                  <li key={`${shortage.day}-${shortage.time_range}-${index}`} className="text-gray-700">
-                    {shortage.day}日 {shortage.time_range}: {shortage.shortage}人 不足
-                  </li>
-                ))}
-              </ul>
+              <div className="max-h-48 overflow-y-auto">
+                <table className="w-full text-sm text-left text-gray-700 border-collapse">
+                  <thead className="bg-red-50 sticky top-0">
+                    <tr>
+                      <th className="px-2 py-1 border border-gray-200">日</th>
+                      <th className="px-2 py-1 border border-gray-200">時間帯</th>
+                      <th className="px-2 py-1 border border-gray-200 text-right">不足人数</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shortages.map((shortage, index) => (
+                      <tr key={`${shortage.day}-${shortage.time_range}-${index}`}>
+                        <td className="px-2 py-1 border border-gray-200 whitespace-nowrap">{shortage.day}日</td>
+                        <td className="px-2 py-1 border border-gray-200 whitespace-nowrap">{shortage.time_range}</td>
+                        <td className="px-2 py-1 border border-gray-200 text-right">{shortage.shortage}人</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
