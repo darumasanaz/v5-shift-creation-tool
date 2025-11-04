@@ -7,6 +7,7 @@ import Calendar from "../components/Calendar";
 import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
+import ShortageSummary from "../components/ShortageSummary";
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
@@ -148,43 +149,25 @@ export default function Home() {
             onEditStaff={setEditingStaff}
           />
           <ShiftDisplay selectedStaff={selectedStaff} schedule={schedule} />
-          {shortages.length > 0 && (
-            <div className="bg-white p-4 rounded-lg shadow">
-              <h3 className="font-bold mb-2 text-red-600">シフトの問題点</h3>
-              <div className="max-h-48 overflow-y-auto">
-                <table className="w-full text-sm text-left text-gray-700 border-collapse">
-                  <thead className="bg-red-50 sticky top-0">
-                    <tr>
-                      <th className="px-2 py-1 border border-gray-200">日</th>
-                      <th className="px-2 py-1 border border-gray-200">時間帯</th>
-                      <th className="px-2 py-1 border border-gray-200 text-right">不足人数</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shortages.map((shortage, index) => (
-                      <tr key={`${shortage.day}-${shortage.time_range}-${index}`}>
-                        <td className="px-2 py-1 border border-gray-200 whitespace-nowrap">{shortage.day}日</td>
-                        <td className="px-2 py-1 border border-gray-200 whitespace-nowrap">{shortage.time_range}</td>
-                        <td className="px-2 py-1 border border-gray-200 text-right">{shortage.shortage}人</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
         </div>
-        <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
-          <Calendar
-            year={initialData.year}
-            month={initialData.month}
+        <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-auto bg-white rounded-lg shadow">
+            <Calendar
+              year={initialData.year}
+              month={initialData.month}
+              days={initialData.days}
+              weekdayOfDay1={initialData.weekdayOfDay1}
+              people={people}
+              schedule={schedule}
+              wishOffs={wishOffs}
+              selectedStaff={selectedStaff}
+              onWishOffToggle={handleWishOffToggle}
+            />
+          </div>
+          <ShortageSummary
             days={initialData.days}
             weekdayOfDay1={initialData.weekdayOfDay1}
-            people={people}
-            schedule={schedule}
-            wishOffs={wishOffs}
-            selectedStaff={selectedStaff}
-            onWishOffToggle={handleWishOffToggle}
+            shortages={shortages}
           />
         </div>
       </main>
