@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ortools.sat.python import cp_model
 
@@ -156,6 +156,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
         for label in strict_bounds
     }
 
+    assumption_details: Dict[int, Dict[str, Any]] = {}
+
     for d in range(num_days):
         day_type = data["dayTypeByDate"][d]
         needs = data["needTemplate"][day_type]
@@ -163,7 +165,16 @@ def solve_shift_scheduling(request: ScheduleRequest):
             need_value = needs[label]
             actual = sum(work[p, d, s_code] for p in range(num_people) for s_code in related_shifts)
             overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
-            model.Add(actual >= need_value)
+            requirement_literal = model.NewBoolVar(f"need_min_{d}_{label}")
+            model.Add(actual >= need_value).OnlyEnforceIf(requirement_literal)
+            model.AddAssumption(requirement_literal)
+            assumption_details[requirement_literal.Index()] = {
+                "type": "need_min",
+                "day": d,
+                "label": label,
+                "required": need_value,
+                "day_type": day_type,
+            }
             model.Add(actual - overstaff <= need_value)
             penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
 
@@ -175,9 +186,27 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
             )
             if "min" in bounds:
-                model.Add(actual >= bounds["min"])
+                min_literal = model.NewBoolVar(f"strict_min_{label}_{d}")
+                model.Add(actual >= bounds["min"]).OnlyEnforceIf(min_literal)
+                model.AddAssumption(min_literal)
+                assumption_details[min_literal.Index()] = {
+                    "type": "strict_min",
+                    "day": d,
+                    "label": label,
+                    "required": bounds["min"],
+                    "day_type": day_type,
+                }
             if "max" in bounds:
-                model.Add(actual <= bounds["max"])
+                max_literal = model.NewBoolVar(f"strict_max_{label}_{d}")
+                model.Add(actual <= bounds["max"]).OnlyEnforceIf(max_literal)
+                model.AddAssumption(max_literal)
+                assumption_details[max_literal.Index()] = {
+                    "type": "strict_max",
+                    "day": d,
+                    "label": label,
+                    "required": bounds["max"],
+                    "day_type": day_type,
+                }
 
     model.Minimize(sum(penalties))
 
@@ -199,6 +228,32 @@ def solve_shift_scheduling(request: ScheduleRequest):
                         break
                 assignments.append(assigned)
             schedule[person.id] = assignments
+    elif status == cp_model.INFEASIBLE:
+        core = solver.SufficientAssumptionsForInfeasibility()
+        for literal in core:
+            info = assumption_details.get(literal)
+            if not info:
+                continue
+            day_display = info["day"] + 1
+            label = info["label"]
+            required = info.get("required", 0)
+            day_type = info.get("day_type")
+            if info["type"] == "need_min":
+                message = f"{day_display}日 ({day_type}) の {label} では最低 {required} 人が必要ですが、充足できません。"
+            elif info["type"] == "strict_min":
+                message = f"{day_display}日 ({day_type}) の {label} は {required} 人未満にはできません。"
+            elif info["type"] == "strict_max":
+                message = f"{day_display}日 ({day_type}) の {label} は {required} 人を超えることはできません。"
+            else:
+                message = f"{day_display}日 ({day_type}) の {label} で制約違反が発生しました。"
+            shortages.append(
+                ShortageInfo(
+                    day=day_display,
+                    time_range=label,
+                    shortage=required,
+                    message=message,
+                )
+            )
 
     status_name = solver.StatusName(status)
     return schedule, shortages, status_name
