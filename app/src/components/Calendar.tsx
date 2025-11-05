@@ -33,7 +33,7 @@ const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
 const coversInterval = (shiftStart: number, shiftEnd: number, [start, end]: [number, number]) => {
   if (end <= 24) {
     const effectiveEnd = Math.min(shiftEnd, 24);
-    return shiftStart < end && effectiveEnd > start;
+    return shiftStart <= end && effectiveEnd > start;
   }
 
   if (shiftEnd <= 24) {

@@ -1,5 +1,5 @@
 import json
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from ortools.sat.python import cp_model
 
@@ -11,6 +11,32 @@ def _load_initial_data() -> Dict:
         return json.load(f)
 
 
+def _parse_interval(label: str) -> Tuple[int, int]:
+    start_str, end_str = label.split("-")
+    start = int(start_str)
+    end = int(end_str)
+
+    if start == 0 and end <= 7:
+        # Treat post-midnight ranges as 24-31 so they work with 24+ hour shifts
+        return 24, 24 + end
+    return start, end
+
+
+def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
+    """Return True when a shift touches the target interval."""
+
+    start, end = interval
+    if start >= 24:
+        if shift_end <= 24:
+            return False
+        return shift_end > start
+    if end <= 24:
+        effective_end = min(shift_end, 24)
+        return shift_start <= end and effective_end > start
+    # Intervals that cross midnight are not expected here
+    return shift_start <= end and shift_end > start
+
+
 def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]]:
     intervals: Dict[str, Tuple[int, int]] = {
         "7-9": (7, 9),
@@ -20,23 +46,24 @@ def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]
         "0-7": (24, 31),  # treat as 24-31 to account for night shifts
     }
 
-    def covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
-        start, end = interval
-        # If interval is post-midnight (>=24), allow wrap
-        if end <= 24:
-            effective_end = min(shift_end, 24)
-            return shift_start < end and effective_end > start
-        # Interval spans post-midnight hours
-        if shift_end <= 24:
-            return False
-        return shift_end > start
-
     time_ranges: Dict[str, List[str]] = {key: [] for key in intervals}
     for code, shift in shifts.items():
         for label, interval in intervals.items():
-            if covers_interval(shift["start"], shift["end"], interval):
+            if _covers_interval(shift["start"], shift["end"], interval):
                 time_ranges[label].append(code)
     return time_ranges
+
+
+def _build_specific_time_ranges(
+    shifts: Dict[str, Dict[str, int]], labels: Iterable[str]
+) -> Dict[str, List[str]]:
+    mapping: Dict[str, List[str]] = {label: [] for label in labels}
+    intervals = {label: _parse_interval(label) for label in labels}
+    for code, shift in shifts.items():
+        for label in labels:
+            if _covers_interval(shift["start"], shift["end"], intervals[label]):
+                mapping[label].append(code)
+    return mapping
 
 
 def solve_shift_scheduling(request: ScheduleRequest):
@@ -142,6 +169,34 @@ def solve_shift_scheduling(request: ScheduleRequest):
             penalties.append(shortage * weights["W_shortage"])
             penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
             shortage_vars[(d, label)] = shortage
+
+    strict_night: Dict[str, int] = data.get("strictNight", {})
+    if strict_night:
+        strict_requirements: Dict[str, Dict[str, Optional[int]]] = {}
+        for label, value in strict_night.items():
+            if label.endswith("_min"):
+                base_label = label[: -len("_min")]
+                strict_requirements.setdefault(base_label, {})["min"] = value
+            elif label.endswith("_max"):
+                base_label = label[: -len("_max")]
+                strict_requirements.setdefault(base_label, {})["max"] = value
+            else:
+                strict_requirements.setdefault(label, {})["min"] = value
+
+        strict_ranges = _build_specific_time_ranges(shifts, strict_requirements.keys())
+
+        for d in range(num_days):
+            for label, related_shifts in strict_ranges.items():
+                if not related_shifts:
+                    continue
+                actual = sum(
+                    work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
+                )
+                requirements = strict_requirements[label]
+                if requirements.get("min") is not None:
+                    model.Add(actual >= requirements["min"])
+                if requirements.get("max") is not None:
+                    model.Add(actual <= requirements["max"])
 
     model.Minimize(sum(penalties))
 
