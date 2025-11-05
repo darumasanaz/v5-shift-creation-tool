@@ -1,4 +1,5 @@
-import { Person, Schedule, WishOffs } from "../types";
+import { useMemo } from "react";
+import { Person, Schedule, ShortageInfo, WishOffs } from "../types";
 
 interface CalendarProps {
   year: number;
@@ -10,9 +11,26 @@ interface CalendarProps {
   wishOffs: WishOffs;
   selectedStaff: Person | null;
   onWishOffToggle: (personId: string, dayIndex: number) => void;
+  shortages: ShortageInfo[];
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
+
+const parseRangeStartMinutes = (range: string) => {
+  const [start] = range.split("-");
+  if (!start) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const match = start.trim().match(/(\d{1,2})(?::(\d{1,2}))?/);
+  if (!match) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const hours = parseInt(match[1] ?? "0", 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  return hours * 60 + minutes;
+};
 
 export default function Calendar({
   year,
@@ -24,8 +42,34 @@ export default function Calendar({
   wishOffs,
   selectedStaff,
   onWishOffToggle,
+  shortages,
 }: CalendarProps) {
   const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
+
+  const shortageRows = useMemo(() => {
+    if (shortages.length === 0) {
+      return [] as { range: string; byDay: Map<number, ShortageInfo> }[];
+    }
+
+    const ranges = new Map<string, Map<number, ShortageInfo>>();
+
+    shortages.forEach((info) => {
+      if (!ranges.has(info.time_range)) {
+        ranges.set(info.time_range, new Map());
+      }
+      ranges.get(info.time_range)!.set(info.day, info);
+    });
+
+    return Array.from(ranges.entries())
+      .sort((a, b) => {
+        const diff = parseRangeStartMinutes(a[0]) - parseRangeStartMinutes(b[0]);
+        if (diff !== 0) {
+          return diff;
+        }
+        return a[0].localeCompare(b[0], "ja");
+      })
+      .map(([range, byDay]) => ({ range, byDay }));
+  }, [shortages]);
 
   const handleDayClick = (personId: string, dayIndex: number) => {
     if (selectedStaff && selectedStaff.id === personId) {
@@ -85,6 +129,26 @@ export default function Calendar({
                     {isWishedOff && <span className="text-red-500 font-bold">休</span>}
                     {shift && <span className="font-bold text-blue-700">{shift}</span>}
                     {!isWishedOff && !shift && <span className="text-gray-300">-</span>}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {shortageRows.map(({ range, byDay }) => (
+            <tr key={`shortage-${range}`} className="bg-red-50">
+              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-red-100 z-10 whitespace-nowrap text-red-700">
+                不足 {range}
+              </td>
+              {Array.from({ length: days }, (_, dayIndex) => {
+                const day = dayIndex + 1;
+                const shortage = byDay.get(day);
+                return (
+                  <td key={`shortage-${range}-${day}`} className="p-2 border border-gray-300">
+                    {shortage ? (
+                      <span className="font-semibold text-red-600">{shortage.shortage}人</span>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
                   </td>
                 );
               })}

@@ -162,13 +162,9 @@ export default function Home() {
               wishOffs={wishOffs}
               selectedStaff={selectedStaff}
               onWishOffToggle={handleWishOffToggle}
+              shortages={shortages}
             />
           </div>
-          <ShortageSummary
-            days={initialData.days}
-            weekdayOfDay1={initialData.weekdayOfDay1}
-            shortages={shortages}
-          />
         </div>
       </main>
 
