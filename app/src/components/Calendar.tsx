@@ -202,6 +202,46 @@ export default function Calendar({
     });
   }, [coverageByLabelMap, days, needsByLabelMap]);
 
+  const coverageRows = useMemo(() => {
+    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
+    const rowByLabel = new Map(rows.map((row) => [row.label, row]));
+
+    for (let day = 1; day <= days; day += 1) {
+      rows.forEach((row) => {
+        row.byDay.set(day, 0);
+      });
+    }
+
+    Object.values(schedule).forEach((assignments) => {
+      if (!assignments) {
+        return;
+      }
+
+      assignments.forEach((shiftCode, dayIndex) => {
+        if (!shiftCode || dayIndex >= days) {
+          return;
+        }
+
+        const labels = shiftCoverage.get(shiftCode);
+        if (!labels) {
+          return;
+        }
+
+        const day = dayIndex + 1;
+        labels.forEach((label) => {
+          const targetRow = rowByLabel.get(label);
+          if (!targetRow) {
+            return;
+          }
+          const current = targetRow.byDay.get(day) ?? 0;
+          targetRow.byDay.set(day, current + 1);
+        });
+      });
+    });
+
+    return rows;
+  }, [days, schedule, shiftCoverage]);
+
   const handleDayClick = (personId: string, dayIndex: number) => {
     if (selectedStaff && selectedStaff.id === personId) {
       onWishOffToggle(personId, dayIndex);
@@ -310,6 +350,22 @@ export default function Calendar({
                 return (
                   <td key={`excess-${label}-${day}`} className="p-2 border border-gray-300">
                     <span className={excess > 0 ? "font-semibold text-green-700" : "text-gray-400"}>{excess}</span>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {coverageRows.map(({ label, byDay }) => (
+            <tr key={`coverage-${label}`} className="bg-blue-50">
+              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-blue-100 z-10 whitespace-nowrap text-blue-700">
+                勤務人数 {label}
+              </td>
+              {Array.from({ length: days }, (_, dayIndex) => {
+                const day = dayIndex + 1;
+                const count = byDay.get(day) ?? 0;
+                return (
+                  <td key={`coverage-${label}-${day}`} className="p-2 border border-gray-300">
+                    <span className={count > 0 ? "font-semibold text-blue-700" : "text-gray-400"}>{count}</span>
                   </td>
                 );
               })}
