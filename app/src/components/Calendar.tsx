@@ -21,6 +21,8 @@ const TIME_RANGE_ORDER = ["7-9", "9-15", "16-18", "18-21", "21-24", "0-7"] as co
 
 type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
 
+type ShortageRow = { label: string; byDay: Map<number, number> };
+
 const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
   "7-9": [7, 9],
   "9-15": [9, 15],
@@ -95,13 +97,15 @@ export default function Calendar({
   const shiftCoverage = useMemo(() => buildShiftCoverageMap(shifts), [shifts]);
 
   const shortageRows = useMemo(() => {
-    const baseRows = TIME_RANGE_ORDER.map((label) => ({
+    const baseRows: ShortageRow[] = TIME_RANGE_ORDER.map((label) => ({
       label,
       byDay: new Map<number, number>(),
     }));
 
-    const additionalRows: { label: string; byDay: Map<number, number> }[] = [];
-    const rowByLabel = new Map(baseRows.map((row) => [row.label, row]));
+    const additionalRows: ShortageRow[] = [];
+    const rowByLabel = new Map<string, ShortageRow>(
+      baseRows.map((row) => [row.label, row]),
+    );
 
     const ensureRow = (label: string) => {
       const existing = rowByLabel.get(label);
