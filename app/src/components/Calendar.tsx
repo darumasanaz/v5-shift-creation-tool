@@ -1,5 +1,13 @@
 import { useMemo } from "react";
-import { Person, Schedule, Shift, ShortageInfo, WishOffs } from "../types";
+import {
+  NeedTemplate,
+  NeedTemplateTimeRange,
+  Person,
+  Schedule,
+  Shift,
+  ShortageInfo,
+  WishOffs,
+} from "../types";
 
 interface CalendarProps {
   year: number;
@@ -13,6 +21,8 @@ interface CalendarProps {
   onWishOffToggle: (personId: string, dayIndex: number) => void;
   shortages: ShortageInfo[];
   shifts: Shift[];
+  needTemplate: NeedTemplate;
+  dayTypeByDate: string[];
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -22,6 +32,15 @@ const TIME_RANGE_ORDER = ["7-9", "9-15", "16-18", "18-21", "21-24", "0-7"] as co
 type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
 
 type ShortageRow = { label: string; byDay: Map<number, number> };
+
+const TIME_RANGE_TO_TEMPLATE_RANGE: Record<TimeRangeLabel, NeedTemplateTimeRange> = {
+  "7-9": "7-9",
+  "9-15": "9-15",
+  "16-18": "16-18",
+  "18-21": "18-24",
+  "21-24": "18-24",
+  "0-7": "0-7",
+};
 
 // Intervals are treated as half-open [start, end) ranges measured in hours.
 // The "0-7" bucket represents the early-morning block of the following day,
@@ -96,6 +115,8 @@ export default function Calendar({
   onWishOffToggle,
   shortages,
   shifts,
+  needTemplate,
+  dayTypeByDate,
 }: CalendarProps) {
   const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
 
@@ -230,6 +251,23 @@ export default function Calendar({
     return rows;
   }, [days, schedule, shiftByCode, shiftCoverage]);
 
+  const requirementRows = useMemo(() => {
+    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
+
+    for (let day = 1; day <= days; day += 1) {
+      const dayTypeKey = dayTypeByDate[day - 1];
+      const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
+
+      rows.forEach((row) => {
+        const templateRange = TIME_RANGE_TO_TEMPLATE_RANGE[row.label];
+        const requirement = template ? template[templateRange] ?? 0 : 0;
+        row.byDay.set(day, requirement);
+      });
+    }
+
+    return rows;
+  }, [dayTypeByDate, days, needTemplate]);
+
   const handleDayClick = (personId: string, dayIndex: number) => {
     if (selectedStaff && selectedStaff.id === personId) {
       onWishOffToggle(personId, dayIndex);
@@ -322,6 +360,24 @@ export default function Calendar({
                   <td key={`shortage-${label}-${day}`} className="p-2 border border-gray-300">
                     <span className={isShort ? "font-semibold text-red-600" : "text-gray-400"}>
                       {shortage}
+                    </span>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {requirementRows.map(({ label, byDay }) => (
+            <tr key={`requirement-${label}`} className="bg-amber-50">
+              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-amber-100 z-10 whitespace-nowrap text-amber-700">
+                必要人数 {label}
+              </td>
+              {Array.from({ length: days }, (_, dayIndex) => {
+                const day = dayIndex + 1;
+                const requirement = byDay.get(day) ?? 0;
+                return (
+                  <td key={`requirement-${label}-${day}`} className="p-2 border border-gray-300">
+                    <span className={requirement > 0 ? "font-semibold text-amber-700" : "text-gray-400"}>
+                      {requirement}
                     </span>
                   </td>
                 );

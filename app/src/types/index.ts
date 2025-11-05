@@ -16,6 +16,18 @@ export interface Person {
   consecMax: number;
 }
 
+export type NeedTemplateTimeRange = "7-9" | "9-15" | "16-18" | "18-24" | "0-7";
+
+export interface NeedTemplateDetail {
+  "7-9": number;
+  "9-15": number;
+  "16-18": number;
+  "18-24": number;
+  "0-7": number;
+}
+
+export type NeedTemplate = Record<string, NeedTemplateDetail>;
+
 export interface InitialData {
   year: number;
   month: number;
@@ -23,6 +35,8 @@ export interface InitialData {
   weekdayOfDay1: number;
   shifts: Shift[];
   people: Person[];
+  needTemplate: NeedTemplate;
+  dayTypeByDate: string[];
 }
 
 export type WishOffs = Record<string, number[]>;
