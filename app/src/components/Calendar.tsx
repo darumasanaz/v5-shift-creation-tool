@@ -95,29 +95,53 @@ export default function Calendar({
   const shiftCoverage = useMemo(() => buildShiftCoverageMap(shifts), [shifts]);
 
   const shortageRows = useMemo(() => {
-    if (shortages.length === 0) {
-      return [] as { range: string; byDay: Map<number, ShortageInfo> }[];
+    const baseRows = TIME_RANGE_ORDER.map((label) => ({
+      label,
+      byDay: new Map<number, number>(),
+    }));
+
+    const additionalRows: { label: string; byDay: Map<number, number> }[] = [];
+    const rowByLabel = new Map(baseRows.map((row) => [row.label, row]));
+
+    const ensureRow = (label: string) => {
+      const existing = rowByLabel.get(label);
+      if (existing) {
+        return existing;
+      }
+
+      const newRow = { label, byDay: new Map<number, number>() };
+      for (let day = 1; day <= days; day += 1) {
+        newRow.byDay.set(day, 0);
+      }
+      additionalRows.push(newRow);
+      rowByLabel.set(label, newRow);
+      return newRow;
+    };
+
+    for (let day = 1; day <= days; day += 1) {
+      baseRows.forEach((row) => {
+        row.byDay.set(day, 0);
+      });
     }
 
-    const ranges = new Map<string, Map<number, ShortageInfo>>();
-
     shortages.forEach((info) => {
-      if (!ranges.has(info.time_range)) {
-        ranges.set(info.time_range, new Map());
+      if (info.day < 1 || info.day > days) {
+        return;
       }
-      ranges.get(info.time_range)!.set(info.day, info);
+      const targetRow = ensureRow(info.time_range);
+      targetRow.byDay.set(info.day, info.shortage);
     });
 
-    return Array.from(ranges.entries())
-      .sort((a, b) => {
-        const diff = parseRangeStartMinutes(a[0]) - parseRangeStartMinutes(b[0]);
-        if (diff !== 0) {
-          return diff;
-        }
-        return a[0].localeCompare(b[0], "ja");
-      })
-      .map(([range, byDay]) => ({ range, byDay }));
-  }, [shortages]);
+    additionalRows.sort((a, b) => {
+      const diff = parseRangeStartMinutes(a.label) - parseRangeStartMinutes(b.label);
+      if (diff !== 0) {
+        return diff;
+      }
+      return a.label.localeCompare(b.label, "ja");
+    });
+
+    return [...baseRows, ...additionalRows];
+  }, [days, shortages]);
 
   const coverageRows = useMemo(() => {
     const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
@@ -222,26 +246,6 @@ export default function Calendar({
               })}
             </tr>
           ))}
-          {shortageRows.map(({ range, byDay }) => (
-            <tr key={`shortage-${range}`} className="bg-red-50">
-              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-red-100 z-10 whitespace-nowrap text-red-700">
-                不足 {range}
-              </td>
-              {Array.from({ length: days }, (_, dayIndex) => {
-                const day = dayIndex + 1;
-                const shortage = byDay.get(day);
-                return (
-                  <td key={`shortage-${range}-${day}`} className="p-2 border border-gray-300">
-                    {shortage ? (
-                      <span className="font-semibold text-red-600">{shortage.shortage}人</span>
-                    ) : (
-                      <span className="text-gray-300">-</span>
-                    )}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
           {coverageRows.map(({ label, byDay }) => (
             <tr key={`coverage-${label}`} className="bg-blue-50">
               <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-blue-100 z-10 whitespace-nowrap text-blue-700">
@@ -253,6 +257,25 @@ export default function Calendar({
                 return (
                   <td key={`coverage-${label}-${day}`} className="p-2 border border-gray-300">
                     <span className={count > 0 ? "font-semibold text-blue-700" : "text-gray-400"}>{count}</span>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {shortageRows.map(({ label, byDay }) => (
+            <tr key={`shortage-${label}`} className="bg-red-50">
+              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-red-100 z-10 whitespace-nowrap text-red-700">
+                不足人数 {label}
+              </td>
+              {Array.from({ length: days }, (_, dayIndex) => {
+                const day = dayIndex + 1;
+                const shortage = byDay.get(day) ?? 0;
+                const isShort = shortage > 0;
+                return (
+                  <td key={`shortage-${label}-${day}`} className="p-2 border border-gray-300">
+                    <span className={isShort ? "font-semibold text-red-600" : "text-gray-400"}>
+                      {shortage}
+                    </span>
                   </td>
                 );
               })}
