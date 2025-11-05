@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Person, Schedule, ShortageInfo, WishOffs } from "../types";
+import { Person, Schedule, Shift, ShortageInfo, WishOffs } from "../types";
 
 interface CalendarProps {
   year: number;
@@ -12,9 +12,53 @@ interface CalendarProps {
   selectedStaff: Person | null;
   onWishOffToggle: (personId: string, dayIndex: number) => void;
   shortages: ShortageInfo[];
+  shifts: Shift[];
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
+
+const TIME_RANGE_ORDER = ["7-9", "9-15", "16-18", "18-24", "0-7"] as const;
+
+type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
+
+const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
+  "7-9": [7, 9],
+  "9-15": [9, 15],
+  "16-18": [16, 18],
+  "18-24": [18, 24],
+  "0-7": [24, 31],
+};
+
+const coversInterval = (shiftStart: number, shiftEnd: number, [start, end]: [number, number]) => {
+  if (end <= 24) {
+    const effectiveEnd = Math.min(shiftEnd, 24);
+    return shiftStart < end && effectiveEnd > start;
+  }
+
+  if (shiftEnd <= 24) {
+    return false;
+  }
+
+  return shiftEnd > start;
+};
+
+const buildShiftCoverageMap = (shifts: Shift[]) => {
+  const shiftToRanges = new Map<string, TimeRangeLabel[]>();
+
+  shifts.forEach((shift) => {
+    const labels: TimeRangeLabel[] = [];
+    TIME_RANGE_ORDER.forEach((label) => {
+      if (coversInterval(shift.start, shift.end, TIME_RANGE_INTERVALS[label])) {
+        labels.push(label);
+      }
+    });
+    if (labels.length > 0) {
+      shiftToRanges.set(shift.code, labels);
+    }
+  });
+
+  return shiftToRanges;
+};
 
 const parseRangeStartMinutes = (range: string) => {
   const [start] = range.split("-");
@@ -43,8 +87,11 @@ export default function Calendar({
   selectedStaff,
   onWishOffToggle,
   shortages,
+  shifts,
 }: CalendarProps) {
   const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
+
+  const shiftCoverage = useMemo(() => buildShiftCoverageMap(shifts), [shifts]);
 
   const shortageRows = useMemo(() => {
     if (shortages.length === 0) {
@@ -70,6 +117,46 @@ export default function Calendar({
       })
       .map(([range, byDay]) => ({ range, byDay }));
   }, [shortages]);
+
+  const coverageRows = useMemo(() => {
+    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
+    const rowByLabel = new Map(rows.map((row) => [row.label, row]));
+
+    for (let day = 1; day <= days; day += 1) {
+      rows.forEach((row) => {
+        row.byDay.set(day, 0);
+      });
+    }
+
+    Object.values(schedule).forEach((assignments) => {
+      if (!assignments) {
+        return;
+      }
+
+      assignments.forEach((shiftCode, dayIndex) => {
+        if (!shiftCode || dayIndex >= days) {
+          return;
+        }
+
+        const labels = shiftCoverage.get(shiftCode);
+        if (!labels) {
+          return;
+        }
+
+        const day = dayIndex + 1;
+        labels.forEach((label) => {
+          const targetRow = rowByLabel.get(label);
+          if (!targetRow) {
+            return;
+          }
+          const current = targetRow.byDay.get(day) ?? 0;
+          targetRow.byDay.set(day, current + 1);
+        });
+      });
+    });
+
+    return rows;
+  }, [days, schedule, shiftCoverage]);
 
   const handleDayClick = (personId: string, dayIndex: number) => {
     if (selectedStaff && selectedStaff.id === personId) {
@@ -149,6 +236,22 @@ export default function Calendar({
                     ) : (
                       <span className="text-gray-300">-</span>
                     )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {coverageRows.map(({ label, byDay }) => (
+            <tr key={`coverage-${label}`} className="bg-blue-50">
+              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-blue-100 z-10 whitespace-nowrap text-blue-700">
+                勤務人数 {label}
+              </td>
+              {Array.from({ length: days }, (_, dayIndex) => {
+                const day = dayIndex + 1;
+                const count = byDay.get(day) ?? 0;
+                return (
+                  <td key={`coverage-${label}-${day}`} className="p-2 border border-gray-300">
+                    <span className={count > 0 ? "font-semibold text-blue-700" : "text-gray-400"}>{count}</span>
                   </td>
                 );
               })}
