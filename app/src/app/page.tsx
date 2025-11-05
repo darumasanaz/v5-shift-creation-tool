@@ -164,6 +164,8 @@ export default function Home() {
               onWishOffToggle={handleWishOffToggle}
               shortages={shortages}
               shifts={initialData.shifts}
+              needTemplate={initialData.needTemplate}
+              dayTypeByDate={initialData.dayTypeByDate}
             />
           </div>
         </div>
