@@ -23,6 +23,8 @@ def _parse_interval(label: str) -> Tuple[int, int]:
 
 
 def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
+    """Return True when a shift touches the target interval."""
+
     start, end = interval
     if start >= 24:
         if shift_end <= 24:
@@ -30,9 +32,9 @@ def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]
         return shift_end > start
     if end <= 24:
         effective_end = min(shift_end, 24)
-        return shift_start < end and effective_end > start
+        return shift_start <= end and effective_end > start
     # Intervals that cross midnight are not expected here
-    return shift_start < end and shift_end > start
+    return shift_start <= end and shift_end > start
 
 
 def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]]:
