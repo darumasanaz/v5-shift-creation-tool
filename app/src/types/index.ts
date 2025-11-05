@@ -16,6 +16,20 @@ export interface Person {
   consecMax: number;
 }
 
+export type NeedTemplateDetail = {
+  "7-9": number;
+  "9-15": number;
+  "16-18": number;
+  "0-7": number;
+} &
+  Partial<{
+    "18-24": number;
+    "18-21": number;
+    "21-24": number;
+  }>;
+
+export type NeedTemplate = Record<string, NeedTemplateDetail>;
+
 export interface InitialData {
   year: number;
   month: number;
@@ -23,6 +37,8 @@ export interface InitialData {
   weekdayOfDay1: number;
   shifts: Shift[];
   people: Person[];
+  needTemplate: NeedTemplate;
+  dayTypeByDate: string[];
 }
 
 export type WishOffs = Record<string, number[]>;
