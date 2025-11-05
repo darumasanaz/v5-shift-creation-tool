@@ -23,6 +23,8 @@ type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
 
 type ShortageRow = { label: string; byDay: Map<number, number> };
 
+// Intervals are treated as half-open [start, end) ranges measured in hours.
+// "0-7" uses 24-31 so that post-midnight segments map to the following day.
 const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
   "7-9": [7, 9],
   "9-15": [9, 15],
@@ -35,14 +37,15 @@ const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
 const coversInterval = (shiftStart: number, shiftEnd: number, [start, end]: [number, number]) => {
   if (end <= 24) {
     const effectiveEnd = Math.min(shiftEnd, 24);
-    return shiftStart <= end && effectiveEnd > start;
+    return shiftStart < end && effectiveEnd > start;
   }
 
   if (shiftEnd <= 24) {
     return false;
   }
 
-  return shiftEnd > start;
+  const afterMidnightStart = Math.max(shiftStart, 24);
+  return afterMidnightStart < end && shiftEnd > start;
 };
 
 const buildShiftCoverageMap = (shifts: Shift[]) => {
@@ -202,13 +205,12 @@ export default function Calendar({
 
             TIME_RANGE_ORDER.forEach((label) => {
               const [rangeStart, rangeEnd] = TIME_RANGE_INTERVALS[label];
-              if (rangeEnd > 24) {
-                return;
-              }
+              const normalizedStart = rangeStart >= 24 ? rangeStart - 24 : rangeStart;
+              const normalizedEnd = rangeEnd > 24 ? rangeEnd - 24 : rangeEnd;
 
               if (
-                afterMidnightStart < rangeEnd &&
-                afterMidnightEnd > rangeStart
+                afterMidnightStart < normalizedEnd &&
+                afterMidnightEnd > normalizedStart
               ) {
                 const nextDayRow = rowByLabel.get(label);
                 if (!nextDayRow) {
