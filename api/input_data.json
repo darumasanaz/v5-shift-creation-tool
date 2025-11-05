@@ -76,8 +76,6 @@
     }
   },
   "dayTypeByDate": [
-    "normalDay",
-    "normalDay",
     "bathDay",
     "bathDay",
     "wednesday",
@@ -106,6 +104,8 @@
     "bathDay",
     "normalDay",
     "normalDay",
+    "bathDay",
+    "bathDay",
     "wednesday"
   ],
   "strictNight": {
