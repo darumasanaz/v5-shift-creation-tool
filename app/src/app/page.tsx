@@ -15,6 +15,7 @@ export default function Home() {
   const [wishOffs, setWishOffs] = useState<WishOffs>({});
   const [schedule, setSchedule] = useState<Schedule>({});
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
+  const [displayShortages, setDisplayShortages] = useState<ShortageInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Person | null>(null);
   const [editingStaff, setEditingStaff] = useState<Person | null>(null);
@@ -62,6 +63,7 @@ export default function Home() {
     setStatusMessage(null);
     setSchedule({});
     setShortages([]);
+    setDisplayShortages([]);
     try {
       const res = await fetch("/api/generate-schedule", {
         method: "POST",
@@ -166,6 +168,14 @@ export default function Home() {
               shifts={initialData.shifts}
               needTemplate={initialData.needTemplate}
               dayTypeByDate={initialData.dayTypeByDate}
+              onShortagesCalculated={setDisplayShortages}
+            />
+          </div>
+          <div className="flex-shrink-0">
+            <ShortageSummary
+              days={initialData.days}
+              weekdayOfDay1={initialData.weekdayOfDay1}
+              shortages={displayShortages}
             />
           </div>
         </div>
