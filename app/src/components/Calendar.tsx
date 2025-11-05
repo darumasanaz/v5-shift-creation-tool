@@ -17,7 +17,7 @@ interface CalendarProps {
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
-const TIME_RANGE_ORDER = ["7-9", "9-15", "16-18", "18-24", "0-7"] as const;
+const TIME_RANGE_ORDER = ["7-9", "9-15", "16-18", "18-21", "21-24", "0-7"] as const;
 
 type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
 
@@ -25,7 +25,8 @@ const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
   "7-9": [7, 9],
   "9-15": [9, 15],
   "16-18": [16, 18],
-  "18-24": [18, 24],
+  "18-21": [18, 21],
+  "21-24": [21, 24],
   "0-7": [24, 31],
 };
 
