@@ -24,19 +24,21 @@ type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
 type ShortageRow = { label: string; byDay: Map<number, number> };
 
 // Intervals are treated as half-open [start, end) ranges measured in hours.
-// "0-7" uses 24-31 so that post-midnight segments map to the following day.
+// The "0-7" bucket represents the early-morning block of the following day,
+// so same-day coverage is contributed via carry-over logic instead of
+// directly matching against this interval.
 const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
   "7-9": [7, 9],
   "9-15": [9, 15],
   "16-18": [16, 18],
   "18-21": [18, 21],
   "21-24": [21, 24],
-  "0-7": [24, 31],
+  "0-7": [0, 7],
 };
 
 const coversInterval = (shiftStart: number, shiftEnd: number, [start, end]: [number, number]) => {
+  const effectiveEnd = Math.min(shiftEnd, 24);
   if (end <= 24) {
-    const effectiveEnd = Math.min(shiftEnd, 24);
     return shiftStart < end && effectiveEnd > start;
   }
 
