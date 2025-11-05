@@ -155,6 +155,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
     shortage_vars: Dict[Tuple[int, str], cp_model.IntVar] = {}
 
     weights = data["weights"]
+    shortage_time_range_weights: Dict[str, int] = weights.get(
+        "shortageTimeRangeWeights", {}
+    )
 
     for d in range(num_days):
         day_type = data["dayTypeByDate"][d]
@@ -166,7 +169,10 @@ def solve_shift_scheduling(request: ScheduleRequest):
             overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
             model.Add(actual + shortage >= need_value)
             model.Add(actual - overstaff <= need_value)
-            penalties.append(shortage * weights["W_shortage"])
+            shortage_weight = weights["W_shortage"] + shortage_time_range_weights.get(
+                label, 0
+            )
+            penalties.append(shortage * shortage_weight)
             penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
             shortage_vars[(d, label)] = shortage
 
