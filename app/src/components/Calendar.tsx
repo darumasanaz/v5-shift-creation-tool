@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { NeedTemplate, Person, Schedule, Shift, WishOffs } from "../types";
+import { Person, Schedule, Shift, ShortageInfo, WishOffs } from "../types";
 
 interface CalendarProps {
   year: number;
@@ -11,9 +11,8 @@ interface CalendarProps {
   wishOffs: WishOffs;
   selectedStaff: Person | null;
   onWishOffToggle: (personId: string, dayIndex: number) => void;
+  shortages: ShortageInfo[];
   shifts: Shift[];
-  needTemplate: NeedTemplate;
-  dayTypeByDate: string[];
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -62,14 +61,21 @@ const buildShiftCoverageMap = (shifts: Shift[]) => {
   return shiftToRanges;
 };
 
-const normalizeNeedDetail = (detail: NeedTemplate[string]): Record<TimeRangeLabel, number> => ({
-  "7-9": detail["7-9"] ?? 0,
-  "9-15": detail["9-15"] ?? 0,
-  "16-18": detail["16-18"] ?? 0,
-  "18-21": detail["18-21"] ?? detail["18-24"] ?? 0,
-  "21-24": detail["21-24"] ?? detail["18-24"] ?? 0,
-  "0-7": detail["0-7"] ?? 0,
-});
+const parseRangeStartMinutes = (range: string) => {
+  const [start] = range.split("-");
+  if (!start) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const match = start.trim().match(/(\d{1,2})(?::(\d{1,2}))?/);
+  if (!match) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+
+  const hours = parseInt(match[1] ?? "0", 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  return hours * 60 + minutes;
+};
 
 export default function Calendar({
   year,
@@ -81,126 +87,37 @@ export default function Calendar({
   wishOffs,
   selectedStaff,
   onWishOffToggle,
+  shortages,
   shifts,
-  needTemplate,
-  dayTypeByDate,
 }: CalendarProps) {
   const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
 
   const shiftCoverage = useMemo(() => buildShiftCoverageMap(shifts), [shifts]);
 
-  const normalizedTemplate = useMemo(() => {
-    const entries = Object.entries(needTemplate || {});
-    return new Map(entries.map(([key, detail]) => [key, normalizeNeedDetail(detail)]));
-  }, [needTemplate]);
-
-  const needsByLabel = useMemo(() => {
-    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
-    const rowByLabel = new Map(rows.map((row) => [row.label, row]));
-
-    for (let day = 1; day <= days; day += 1) {
-      rows.forEach((row) => {
-        row.byDay.set(day, 0);
-      });
-
-      const dayType = dayTypeByDate[day - 1];
-      const template = dayType ? normalizedTemplate.get(dayType) : undefined;
-      if (!template) {
-        continue;
-      }
-
-      TIME_RANGE_ORDER.forEach((label) => {
-        const targetRow = rowByLabel.get(label);
-        if (!targetRow) {
-          return;
-        }
-        const needValue = template[label];
-        targetRow.byDay.set(day, needValue ?? 0);
-      });
-    }
-
-    return rows;
-  }, [dayTypeByDate, days, normalizedTemplate]);
-
-  const needsByLabelMap = useMemo(() => {
-    const map = new Map<TimeRangeLabel, Map<number, number>>();
-    needsByLabel.forEach(({ label, byDay }) => {
-      map.set(label, new Map(byDay));
-    });
-    return map;
-  }, [needsByLabel]);
-
-  const coverageRows = useMemo(() => {
-    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
-    const rowByLabel = new Map(rows.map((row) => [row.label, row]));
-
-    for (let day = 1; day <= days; day += 1) {
-      rows.forEach((row) => {
-        row.byDay.set(day, 0);
-      });
-    }
-
-    Object.values(schedule).forEach((assignments) => {
-      if (!assignments) {
-        return;
-      }
-
-      assignments.forEach((shiftCode, dayIndex) => {
-        if (!shiftCode || dayIndex >= days) {
-          return;
-        }
-
-        const labels = shiftCoverage.get(shiftCode);
-        if (!labels) {
-          return;
-        }
-
-        const day = dayIndex + 1;
-        labels.forEach((label) => {
-          const targetRow = rowByLabel.get(label);
-          if (!targetRow) {
-            return;
-          }
-          const current = targetRow.byDay.get(day) ?? 0;
-          targetRow.byDay.set(day, current + 1);
-        });
-      });
-    });
-
-    return rows;
-  }, [days, schedule, shiftCoverage]);
-
-  const coverageByLabelMap = useMemo(() => {
-    const map = new Map<TimeRangeLabel, Map<number, number>>();
-    coverageRows.forEach(({ label, byDay }) => {
-      map.set(label, new Map(byDay));
-    });
-    return map;
-  }, [coverageRows]);
-
   const shortageRows = useMemo(() => {
-    return TIME_RANGE_ORDER.map((label) => {
-      const byDay = new Map<number, number>();
-      for (let day = 1; day <= days; day += 1) {
-        const needValue = needsByLabelMap.get(label)?.get(day) ?? 0;
-        const actual = coverageByLabelMap.get(label)?.get(day) ?? 0;
-        byDay.set(day, Math.max(needValue - actual, 0));
-      }
-      return { label, byDay };
-    });
-  }, [coverageByLabelMap, days, needsByLabelMap]);
+    if (shortages.length === 0) {
+      return [] as { range: string; byDay: Map<number, ShortageInfo> }[];
+    }
 
-  const excessRows = useMemo(() => {
-    return TIME_RANGE_ORDER.map((label) => {
-      const byDay = new Map<number, number>();
-      for (let day = 1; day <= days; day += 1) {
-        const needValue = needsByLabelMap.get(label)?.get(day) ?? 0;
-        const actual = coverageByLabelMap.get(label)?.get(day) ?? 0;
-        byDay.set(day, Math.max(actual - needValue, 0));
+    const ranges = new Map<string, Map<number, ShortageInfo>>();
+
+    shortages.forEach((info) => {
+      if (!ranges.has(info.time_range)) {
+        ranges.set(info.time_range, new Map());
       }
-      return { label, byDay };
+      ranges.get(info.time_range)!.set(info.day, info);
     });
-  }, [coverageByLabelMap, days, needsByLabelMap]);
+
+    return Array.from(ranges.entries())
+      .sort((a, b) => {
+        const diff = parseRangeStartMinutes(a[0]) - parseRangeStartMinutes(b[0]);
+        if (diff !== 0) {
+          return diff;
+        }
+        return a[0].localeCompare(b[0], "ja");
+      })
+      .map(([range, byDay]) => ({ range, byDay }));
+  }, [shortages]);
 
   const coverageRows = useMemo(() => {
     const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
@@ -305,51 +222,21 @@ export default function Calendar({
               })}
             </tr>
           ))}
-          {shortageRows.map(({ label, byDay }) => (
-            <tr key={`shortage-${label}`} className="bg-red-50">
+          {shortageRows.map(({ range, byDay }) => (
+            <tr key={`shortage-${range}`} className="bg-red-50">
               <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-red-100 z-10 whitespace-nowrap text-red-700">
-                不足 {label}
+                不足 {range}
               </td>
               {Array.from({ length: days }, (_, dayIndex) => {
                 const day = dayIndex + 1;
-                const shortage = byDay.get(day) ?? 0;
+                const shortage = byDay.get(day);
                 return (
-                  <td key={`shortage-${label}-${day}`} className="p-2 border border-gray-300">
-                    <span className={shortage > 0 ? "font-semibold text-red-600" : "text-gray-400"}>
-                      {shortage}
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-          {coverageRows.map(({ label, byDay }) => (
-            <tr key={`coverage-${label}`} className="bg-blue-50">
-              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-blue-100 z-10 whitespace-nowrap text-blue-700">
-                勤務人数 {label}
-              </td>
-              {Array.from({ length: days }, (_, dayIndex) => {
-                const day = dayIndex + 1;
-                const count = byDay.get(day) ?? 0;
-                return (
-                  <td key={`coverage-${label}-${day}`} className="p-2 border border-gray-300">
-                    <span className={count > 0 ? "font-semibold text-blue-700" : "text-gray-400"}>{count}</span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-          {excessRows.map(({ label, byDay }) => (
-            <tr key={`excess-${label}`} className="bg-green-50">
-              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-green-100 z-10 whitespace-nowrap text-green-700">
-                超過 {label}
-              </td>
-              {Array.from({ length: days }, (_, dayIndex) => {
-                const day = dayIndex + 1;
-                const excess = byDay.get(day) ?? 0;
-                return (
-                  <td key={`excess-${label}-${day}`} className="p-2 border border-gray-300">
-                    <span className={excess > 0 ? "font-semibold text-green-700" : "text-gray-400"}>{excess}</span>
+                  <td key={`shortage-${range}-${day}`} className="p-2 border border-gray-300">
+                    {shortage ? (
+                      <span className="font-semibold text-red-600">{shortage.shortage}人</span>
+                    ) : (
+                      <span className="text-gray-300">-</span>
+                    )}
                   </td>
                 );
               })}
