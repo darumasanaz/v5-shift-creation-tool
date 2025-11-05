@@ -162,9 +162,8 @@ export default function Home() {
               wishOffs={wishOffs}
               selectedStaff={selectedStaff}
               onWishOffToggle={handleWishOffToggle}
+              shortages={shortages}
               shifts={initialData.shifts}
-              needTemplate={initialData.needTemplate}
-              dayTypeByDate={initialData.dayTypeByDate}
             />
           </div>
         </div>
