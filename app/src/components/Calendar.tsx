@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
 import {
   NeedTemplate,
   NeedTemplateTimeRange,
@@ -23,6 +24,7 @@ interface CalendarProps {
   shifts: Shift[];
   needTemplate: NeedTemplate;
   dayTypeByDate: string[];
+  onShortagesCalculated?: (shortages: ShortageInfo[]) => void;
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -117,8 +119,17 @@ export default function Calendar({
   shifts,
   needTemplate,
   dayTypeByDate,
+  onShortagesCalculated,
 }: CalendarProps) {
-  const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
+  const normalizedWeekdayOfDay1 = useMemo(
+    () => normalizeWeekdayIndex(weekdayOfDay1),
+    [weekdayOfDay1],
+  );
+  const normalizedDayTypes = useMemo(
+    () => normalizeDayTypeByDate(dayTypeByDate, weekdayOfDay1),
+    [dayTypeByDate, weekdayOfDay1],
+  );
+  const firstDayOffset = normalizedWeekdayOfDay1;
 
   const shiftCoverage = useMemo(() => buildShiftCoverageMap(shifts), [shifts]);
   const shiftByCode = useMemo(() => {
@@ -128,57 +139,6 @@ export default function Calendar({
     });
     return map;
   }, [shifts]);
-
-  const shortageRows = useMemo(() => {
-    const baseRows: ShortageRow[] = TIME_RANGE_ORDER.map((label) => ({
-      label,
-      byDay: new Map<number, number>(),
-    }));
-
-    const additionalRows: ShortageRow[] = [];
-    const rowByLabel = new Map<string, ShortageRow>(
-      baseRows.map((row) => [row.label, row]),
-    );
-
-    const ensureRow = (label: string) => {
-      const existing = rowByLabel.get(label);
-      if (existing) {
-        return existing;
-      }
-
-      const newRow = { label, byDay: new Map<number, number>() };
-      for (let day = 1; day <= days; day += 1) {
-        newRow.byDay.set(day, 0);
-      }
-      additionalRows.push(newRow);
-      rowByLabel.set(label, newRow);
-      return newRow;
-    };
-
-    for (let day = 1; day <= days; day += 1) {
-      baseRows.forEach((row) => {
-        row.byDay.set(day, 0);
-      });
-    }
-
-    shortages.forEach((info) => {
-      if (info.day < 1 || info.day > days) {
-        return;
-      }
-      const targetRow = ensureRow(info.time_range);
-      targetRow.byDay.set(info.day, info.shortage);
-    });
-
-    additionalRows.sort((a, b) => {
-      const diff = parseRangeStartMinutes(a.label) - parseRangeStartMinutes(b.label);
-      if (diff !== 0) {
-        return diff;
-      }
-      return a.label.localeCompare(b.label, "ja");
-    });
-
-    return [...baseRows, ...additionalRows];
-  }, [days, shortages]);
 
   const coverageRows = useMemo(() => {
     const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
@@ -255,7 +215,7 @@ export default function Calendar({
     const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
 
     for (let day = 1; day <= days; day += 1) {
-      const dayTypeKey = dayTypeByDate[day - 1];
+      const dayTypeKey = normalizedDayTypes[day - 1];
       const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
 
       rows.forEach((row) => {
@@ -266,7 +226,93 @@ export default function Calendar({
     }
 
     return rows;
-  }, [dayTypeByDate, days, needTemplate]);
+  }, [days, needTemplate, normalizedDayTypes]);
+
+  const coverageByLabel = useMemo(() => {
+    return new Map(coverageRows.map((row) => [row.label, row.byDay]));
+  }, [coverageRows]);
+
+  const requirementByLabel = useMemo(() => {
+    return new Map(requirementRows.map((row) => [row.label, row.byDay]));
+  }, [requirementRows]);
+
+  const shortageComputation = useMemo(() => {
+    const baseRows: ShortageRow[] = TIME_RANGE_ORDER.map((label) => ({
+      label,
+      byDay: new Map<number, number>(),
+    }));
+    const baseRowByLabel = new Map<string, ShortageRow>(
+      baseRows.map((row) => [row.label, row]),
+    );
+    const additionalRows: ShortageRow[] = [];
+    const additionalRowByLabel = new Map<string, ShortageRow>();
+
+    for (let day = 1; day <= days; day += 1) {
+      TIME_RANGE_ORDER.forEach((label) => {
+        const requirement = requirementByLabel.get(label)?.get(day) ?? 0;
+        const coverage = coverageByLabel.get(label)?.get(day) ?? 0;
+        const shortageValue = Math.max(requirement - coverage, 0);
+        baseRowByLabel.get(label)!.byDay.set(day, shortageValue);
+      });
+    }
+
+    shortages.forEach((info) => {
+      if (info.day < 1 || info.day > days) {
+        return;
+      }
+
+      const baseRow = baseRowByLabel.get(info.time_range);
+      if (baseRow) {
+        const current = baseRow.byDay.get(info.day) ?? 0;
+        if (info.shortage > current) {
+          baseRow.byDay.set(info.day, info.shortage);
+        }
+        return;
+      }
+
+      let targetRow = additionalRowByLabel.get(info.time_range);
+      if (!targetRow) {
+        targetRow = { label: info.time_range, byDay: new Map<number, number>() };
+        for (let day = 1; day <= days; day += 1) {
+          targetRow.byDay.set(day, 0);
+        }
+        additionalRows.push(targetRow);
+        additionalRowByLabel.set(info.time_range, targetRow);
+      }
+      targetRow.byDay.set(info.day, info.shortage);
+    });
+
+    additionalRows.sort((a, b) => {
+      const diff = parseRangeStartMinutes(a.label) - parseRangeStartMinutes(b.label);
+      if (diff !== 0) {
+        return diff;
+      }
+      return a.label.localeCompare(b.label, "ja");
+    });
+
+    const shortageList: ShortageInfo[] = [];
+    [...baseRows, ...additionalRows].forEach((row) => {
+      row.byDay.forEach((value, day) => {
+        if (value > 0) {
+          shortageList.push({ day, time_range: row.label, shortage: value });
+        }
+      });
+    });
+
+    return {
+      rows: [...baseRows, ...additionalRows],
+      list: shortageList,
+    };
+  }, [coverageByLabel, days, requirementByLabel, shortages]);
+
+  const shortageRows = shortageComputation.rows;
+
+  useEffect(() => {
+    if (!onShortagesCalculated) {
+      return;
+    }
+    onShortagesCalculated(shortageComputation.list);
+  }, [onShortagesCalculated, shortageComputation.list]);
 
   const handleDayClick = (personId: string, dayIndex: number) => {
     if (selectedStaff && selectedStaff.id === personId) {

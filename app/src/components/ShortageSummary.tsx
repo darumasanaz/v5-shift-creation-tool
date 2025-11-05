@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ShortageInfo } from "../types";
+import { normalizeWeekdayIndex } from "../utils/dateUtils";
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
 
@@ -8,8 +9,6 @@ interface ShortageSummaryProps {
   weekdayOfDay1: number;
   shortages: ShortageInfo[];
 }
-
-const normalizeWeekday = (weekday: number) => ((weekday % 7) + 7) % 7;
 
 export default function ShortageSummary({ days, weekdayOfDay1, shortages }: ShortageSummaryProps) {
   const shortagesByDay = useMemo(() => {
@@ -27,6 +26,8 @@ export default function ShortageSummary({ days, weekdayOfDay1, shortages }: Shor
     return null;
   }
 
+  const normalizedWeekdayOfDay1 = normalizeWeekdayIndex(weekdayOfDay1);
+
   return (
     <div className="bg-white p-4 rounded-lg shadow overflow-x-auto">
       <h3 className="font-bold text-red-600">シフトの問題点</h3>
@@ -38,7 +39,7 @@ export default function ShortageSummary({ days, weekdayOfDay1, shortages }: Shor
         >
           {Array.from({ length: days }, (_, index) => {
             const day = index + 1;
-            const weekdayIndex = normalizeWeekday(weekdayOfDay1 + index);
+            const weekdayIndex = normalizeWeekdayIndex(normalizedWeekdayOfDay1 + index);
             const isWeekend = weekdayIndex >= 5;
             const items = shortagesByDay.get(day) ?? [];
 
