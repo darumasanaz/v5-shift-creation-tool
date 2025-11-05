@@ -55,6 +55,7 @@ class Weights(BaseModel):
     W_prefer_fill_morning7_9: int
     W_fill_9_15: int
     W_requested_off_violation: int
+    shortageTimeRangeWeights: Dict[str, int] = Field(default_factory=dict)
 
 
 class InitialData(BaseModel):
