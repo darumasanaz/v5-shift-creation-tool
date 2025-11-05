@@ -163,6 +163,7 @@ export default function Home() {
               selectedStaff={selectedStaff}
               onWishOffToggle={handleWishOffToggle}
               shortages={shortages}
+              shifts={initialData.shifts}
             />
           </div>
         </div>
