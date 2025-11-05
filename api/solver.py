@@ -162,8 +162,6 @@ def solve_shift_scheduling(request: ScheduleRequest):
         for label, related_shifts in time_ranges.items():
             need_value = needs[label]
             actual = sum(work[p, d, s_code] for p in range(num_people) for s_code in related_shifts)
-            if label == "16-18":
-                model.Add(actual >= 3)
             shortage = model.NewIntVar(0, need_value, f"shortage_{d}_{label}")
             overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
             model.Add(actual + shortage >= need_value)
