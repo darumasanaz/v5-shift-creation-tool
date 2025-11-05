@@ -7,6 +7,7 @@ import Calendar from "../components/Calendar";
 import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
+import ShortageSummary from "../components/ShortageSummary";
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
