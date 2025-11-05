@@ -95,6 +95,13 @@ export default function Calendar({
   const firstDayOffset = ((weekdayOfDay1 % 7) + 7) % 7;
 
   const shiftCoverage = useMemo(() => buildShiftCoverageMap(shifts), [shifts]);
+  const shiftByCode = useMemo(() => {
+    const map = new Map<string, Shift>();
+    shifts.forEach((shift) => {
+      map.set(shift.code, shift);
+    });
+    return map;
+  }, [shifts]);
 
   const shortageRows = useMemo(() => {
     const baseRows: ShortageRow[] = TIME_RANGE_ORDER.map((label) => ({
@@ -172,6 +179,11 @@ export default function Calendar({
           return;
         }
 
+        const shift = shiftByCode.get(shiftCode);
+        if (!shift) {
+          return;
+        }
+
         const day = dayIndex + 1;
         labels.forEach((label) => {
           const targetRow = rowByLabel.get(label);
@@ -181,11 +193,38 @@ export default function Calendar({
           const current = targetRow.byDay.get(day) ?? 0;
           targetRow.byDay.set(day, current + 1);
         });
+
+        if (shift.end > 24) {
+          const nextDay = day + 1;
+          if (nextDay <= days) {
+            const afterMidnightStart = Math.max(shift.start, 24) - 24;
+            const afterMidnightEnd = shift.end - 24;
+
+            TIME_RANGE_ORDER.forEach((label) => {
+              const [rangeStart, rangeEnd] = TIME_RANGE_INTERVALS[label];
+              if (rangeEnd > 24) {
+                return;
+              }
+
+              if (
+                afterMidnightStart < rangeEnd &&
+                afterMidnightEnd > rangeStart
+              ) {
+                const nextDayRow = rowByLabel.get(label);
+                if (!nextDayRow) {
+                  return;
+                }
+                const current = nextDayRow.byDay.get(nextDay) ?? 0;
+                nextDayRow.byDay.set(nextDay, current + 1);
+              }
+            });
+          }
+        }
       });
     });
 
     return rows;
-  }, [days, schedule, shiftCoverage]);
+  }, [days, schedule, shiftByCode, shiftCoverage]);
 
   const handleDayClick = (personId: string, dayIndex: number) => {
     if (selectedStaff && selectedStaff.id === personId) {
