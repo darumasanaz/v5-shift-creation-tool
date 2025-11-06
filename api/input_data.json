@@ -70,7 +70,7 @@
     "wednesday": {
       "7-9": 3,
       "9-15": 2,
-      "16-18": 4,
+      "16-18": 3,
       "18-24": 2,
       "0-7": 2
     }
@@ -200,18 +200,6 @@
       "consecMax": 3
     },
     {
-      "id": "南",
-      "canWork": [
-        "DA"
-      ],
-      "fixedOffWeekdays": [],
-      "weeklyMin": 0,
-      "weeklyMax": 4,
-      "monthlyMin": 0,
-      "monthlyMax": 16,
-      "consecMax": 4
-    },
-    {
       "id": "瀬口",
       "canWork": [
         "DA"
@@ -256,7 +244,7 @@
       "consecMax": 2
     },
     {
-      "id": "うしのはま",
+      "id": "牛之濱",
       "canWork": [
         "NB"
       ],
@@ -268,7 +256,7 @@
       "consecMax": 5
     },
     {
-      "id": "つじた",
+      "id": "辻田",
       "canWork": [
         "NB"
       ],
@@ -338,18 +326,6 @@
       "monthlyMin": 6,
       "monthlyMax": 10,
       "consecMax": 4
-    },
-    {
-      "id": "小澤",
-      "canWork": [
-        "DB"
-      ],
-      "fixedOffWeekdays": [],
-      "weeklyMin": 0,
-      "weeklyMax": 2,
-      "monthlyMin": 0,
-      "monthlyMax": 5,
-      "consecMax": 2
     }
   ],
   "rules": {
