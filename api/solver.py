@@ -106,6 +106,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
     num_days = data["days"]
     people = request.people
     num_people = len(people)
+    person_indices: Dict[str, int] = {person.id: idx for idx, person in enumerate(people)}
+    i_morikawa = person_indices.get("森川孝")
+    i_shibata = person_indices.get("柴田")
     shifts = {s["code"]: s for s in data["shifts"]}
     all_shift_codes = list(shifts.keys())
     time_ranges, carry_over_ranges = _build_time_ranges(shifts)
@@ -119,6 +122,69 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 work[p, d, s_code] = model.NewBoolVar(f"work_{p}_{d}_{s_code}")
 
     # Hard constraints -----------------------------------------------------
+    def _to_dict(obj):
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        if hasattr(obj, "dict"):
+            return obj.dict()
+        return obj
+
+    pair_conflict_sources = list(data.get("rules", {}).get("pairShiftConflicts", []))
+    if request.pairShiftConflicts:
+        pair_conflict_sources.extend(request.pairShiftConflicts)
+
+    normalized_conflicts = []
+    for conflict in pair_conflict_sources:
+        conflict_dict = _to_dict(conflict)
+        people_pair = conflict_dict.get("people", [])
+        if not isinstance(people_pair, list) or len(people_pair) != 2:
+            continue
+        rules = []
+        for rule in conflict_dict.get("rules", []):
+            rule_dict = _to_dict(rule)
+            first_shifts = [s for s in rule_dict.get("firstPersonShifts", []) if s in all_shift_codes]
+            second_shifts = [s for s in rule_dict.get("secondPersonShifts", []) if s in all_shift_codes]
+            if not first_shifts or not second_shifts:
+                continue
+            day_offset = int(rule_dict.get("dayOffset", 0))
+            rules.append((first_shifts, second_shifts, day_offset))
+        if rules:
+            normalized_conflicts.append((people_pair[0], people_pair[1], rules))
+
+    if (
+        i_morikawa is not None
+        and i_shibata is not None
+        and not any({first, second} == {"森川孝", "柴田"} for first, second, _ in normalized_conflicts)
+    ):
+        normalized_conflicts.append(
+            (
+                "柴田",
+                "森川孝",
+                [
+                    (["NC"], ["NA"], 0),
+                    (["NC"], ["EA", "NA"], 1),
+                ],
+            )
+        )
+
+    for first_id, second_id, rules in normalized_conflicts:
+        first_idx = person_indices.get(first_id)
+        second_idx = person_indices.get(second_id)
+        if first_idx is None or second_idx is None:
+            continue
+        for first_shifts, second_shifts, day_offset in rules:
+            for d in range(num_days):
+                target_day = d + day_offset
+                if target_day < 0 or target_day >= num_days:
+                    continue
+                for first_shift in first_shifts:
+                    for second_shift in second_shifts:
+                        model.Add(
+                            work[first_idx, d, first_shift]
+                            + work[second_idx, target_day, second_shift]
+                            <= 1
+                        )
+
     # At most one shift per person per day
     for p in range(num_people):
         for d in range(num_days):
