@@ -41,6 +41,8 @@ export interface InitialData {
 
 export type WishOffs = Record<string, number[]>;
 
+export type ShiftPreferences = Record<string, Record<number, string>>;
+
 export type Schedule = Record<string, (string | null | undefined)[]>;
 
 export interface ShortageInfo {

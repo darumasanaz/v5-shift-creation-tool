@@ -1,7 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { InitialData, Person, Schedule, ScheduleResponse, ShortageInfo, WishOffs } from "../types";
+import {
+  InitialData,
+  Person,
+  Schedule,
+  ScheduleResponse,
+  ShiftPreferences,
+  ShortageInfo,
+  WishOffs,
+} from "../types";
 import { buildScheduleMatrix, toCsvString } from "../utils/export";
 import Calendar from "../components/Calendar";
 import StaffList from "../components/StaffList";
@@ -13,6 +21,7 @@ export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [wishOffs, setWishOffs] = useState<WishOffs>({});
+  const [shiftPreferences, setShiftPreferences] = useState<ShiftPreferences>({});
   const [schedule, setSchedule] = useState<Schedule>({});
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
   const [displayShortages, setDisplayShortages] = useState<ShortageInfo[]>([]);
@@ -68,7 +77,7 @@ export default function Home() {
       const res = await fetch("/api/generate-schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ people, wishOffs }),
+        body: JSON.stringify({ people, wishOffs, shiftPreferences }),
       });
       const result: ScheduleResponse = await res.json();
       if (!res.ok) {
@@ -112,6 +121,22 @@ export default function Home() {
   const handleUpdateStaff = (updatedStaff: Person) => {
     setPeople((prev) => prev.map((person) => (person.id === updatedStaff.id ? updatedStaff : person)));
     setEditingStaff(null);
+  };
+
+  const handleShiftPreferenceChange = (personId: string, dayIndex: number, shiftCode: string | null) => {
+    setShiftPreferences((prev) => {
+      const current = prev[personId] ?? {};
+      if (!shiftCode) {
+        const { [dayIndex]: _removed, ...rest } = current;
+        const next = Object.keys(rest).length > 0 ? rest : undefined;
+        if (!next) {
+          const { [personId]: _personRemoved, ...others } = prev;
+          return others;
+        }
+        return { ...prev, [personId]: rest };
+      }
+      return { ...prev, [personId]: { ...current, [dayIndex]: shiftCode } };
+    });
   };
 
   if (!initialData) {
@@ -162,8 +187,10 @@ export default function Home() {
               people={people}
               schedule={schedule}
               wishOffs={wishOffs}
+              shiftPreferences={shiftPreferences}
               selectedStaff={selectedStaff}
               onWishOffToggle={handleWishOffToggle}
+              onShiftPreferenceChange={handleShiftPreferenceChange}
               shortages={shortages}
               shifts={initialData.shifts}
               needTemplate={initialData.needTemplate}

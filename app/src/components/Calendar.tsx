@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
 import {
   NeedTemplate,
@@ -7,6 +8,7 @@ import {
   Schedule,
   Shift,
   ShortageInfo,
+  ShiftPreferences,
   WishOffs,
 } from "../types";
 
@@ -18,8 +20,10 @@ interface CalendarProps {
   people: Person[];
   schedule: Schedule;
   wishOffs: WishOffs;
+  shiftPreferences: ShiftPreferences;
   selectedStaff: Person | null;
   onWishOffToggle: (personId: string, dayIndex: number) => void;
+  onShiftPreferenceChange: (personId: string, dayIndex: number, shiftCode: string | null) => void;
   shortages: ShortageInfo[];
   shifts: Shift[];
   needTemplate: NeedTemplate;
@@ -42,6 +46,13 @@ const TIME_RANGE_TO_TEMPLATE_RANGE: Record<TimeRangeLabel, NeedTemplateTimeRange
   "18-21": "18-24",
   "21-24": "18-24",
   "0-7": "0-7",
+};
+
+type ContextMenuState = {
+  personId: string;
+  dayIndex: number;
+  x: number;
+  y: number;
 };
 
 // Intervals are treated as half-open [start, end) ranges measured in hours.
@@ -111,8 +122,10 @@ export default function Calendar({
   people,
   schedule,
   wishOffs,
+  shiftPreferences,
   selectedStaff,
   onWishOffToggle,
+  onShiftPreferenceChange,
   shortages,
   shifts,
   needTemplate,
@@ -137,6 +150,9 @@ export default function Calendar({
     });
     return map;
   }, [shifts]);
+
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   const coverageRows = useMemo(() => {
     const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
@@ -321,13 +337,100 @@ export default function Calendar({
     }
   };
 
+  const handleContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (!selectedStaff || selectedStaff.id !== personId) {
+        return;
+      }
+      event.preventDefault();
+      setContextMenu({ personId, dayIndex, x: event.clientX, y: event.clientY });
+    },
+    [selectedStaff],
+  );
+
+  const handlePreferenceSelect = useCallback(
+    (shiftCode: string | null) => {
+      if (!contextMenu) {
+        return;
+      }
+      onShiftPreferenceChange(contextMenu.personId, contextMenu.dayIndex, shiftCode);
+      setContextMenu(null);
+    },
+    [contextMenu, onShiftPreferenceChange],
+  );
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return;
+    }
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setContextMenu(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (contextMenu && selectedStaff?.id !== contextMenu.personId) {
+      setContextMenu(null);
+    }
+  }, [contextMenu, selectedStaff]);
+
+  const activePreference = contextMenu
+    ? shiftPreferences[contextMenu.personId]?.[contextMenu.dayIndex] ?? null
+    : null;
+
+  const contextMenuPerson = contextMenu
+    ? people.find((person) => person.id === contextMenu.personId) ?? null
+    : null;
+
+  const contextMenuDay = contextMenu ? contextMenu.dayIndex + 1 : null;
+
+  const menuPosition = useMemo(() => {
+    if (!contextMenu) {
+      return null;
+    }
+
+    if (typeof window === "undefined") {
+      return { top: contextMenu.y, left: contextMenu.x };
+    }
+
+    const padding = 8;
+    const menuWidth = 256;
+    const menuHeight = 320;
+    const clampedTop = Math.min(contextMenu.y, window.innerHeight - menuHeight - padding);
+    const clampedLeft = Math.min(contextMenu.x, window.innerWidth - menuWidth - padding);
+
+    return {
+      top: Math.max(padding, clampedTop),
+      left: Math.max(padding, clampedLeft),
+    };
+  }, [contextMenu]);
+
   return (
     <div className="p-4">
       <div className="flex items-baseline justify-between mb-2">
         <h2 className="text-lg font-semibold text-gray-800">
           {year}年 {month}月
         </h2>
-        <p className="text-xs text-gray-500">セルをクリックして希望休を設定できます</p>
+        <p className="text-xs text-gray-500">
+          セルをクリックして希望休、右クリックして希望シフトを設定できます
+        </p>
       </div>
       <table className="w-full border-collapse text-sm text-center">
         <thead>
@@ -361,18 +464,29 @@ export default function Calendar({
                 const isWishedOff = wishOffs[person.id]?.includes(dayIndex) ?? false;
                 const shift = schedule[person.id]?.[dayIndex] ?? null;
                 const isSelected = selectedStaff?.id === person.id;
+                const preferredShiftCode = shiftPreferences[person.id]?.[dayIndex] ?? null;
+                const preferredShift = preferredShiftCode ? shiftByCode.get(preferredShiftCode) : null;
 
                 return (
                   <td
                     key={`${person.id}-${day}`}
                     onClick={() => handleDayClick(person.id, dayIndex)}
+                    onContextMenu={(event) => handleContextMenu(event, person.id, dayIndex)}
                     className={`p-2 border border-gray-300 relative ${
                       isSelected ? "cursor-pointer" : ""
-                    } ${isWishedOff ? "bg-red-50" : ""}`}
+                    } ${isWishedOff ? "bg-red-50" : ""} ${
+                      preferredShiftCode && !isWishedOff ? "ring-2 ring-inset ring-blue-300" : ""
+                    }`}
                   >
                     {isWishedOff && <span className="text-red-500 font-bold">休</span>}
                     {shift && <span className="font-bold text-blue-700">{shift}</span>}
                     {!isWishedOff && !shift && <span className="text-gray-300">-</span>}
+                    {preferredShiftCode && (
+                      <span className="absolute bottom-1 right-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200 shadow-sm">
+                        希望:
+                        {preferredShift?.name ?? preferredShiftCode}
+                      </span>
+                    )}
                   </td>
                 );
               })}
@@ -433,6 +547,50 @@ export default function Calendar({
           ))}
         </tbody>
       </table>
+      {contextMenu && (
+        <div
+          ref={menuRef}
+          className="fixed z-50 w-64 bg-white border border-gray-200 rounded-md shadow-lg overflow-hidden"
+          style={menuPosition ?? { top: contextMenu.y, left: contextMenu.x }}
+          onContextMenu={(event) => event.preventDefault()}
+        >
+          <div className="px-3 py-2 border-b border-gray-200">
+            <p className="text-xs font-semibold text-gray-700">希望シフトを選択</p>
+            <p className="text-[11px] text-gray-500">
+              {contextMenu.personId} / {contextMenuDay}日
+            </p>
+          </div>
+          <div className="max-h-60 overflow-y-auto py-1">
+            {shifts.map((shift) => {
+              const canSelect = !contextMenuPerson || contextMenuPerson.canWork.includes(shift.code);
+              const isActive = activePreference === shift.code;
+              return (
+                <button
+                  key={shift.code}
+                  type="button"
+                  onClick={() => handlePreferenceSelect(shift.code)}
+                  disabled={!canSelect}
+                  className={`w-full px-3 py-2 text-left text-sm flex items-center justify-between transition ${
+                    isActive ? "bg-blue-50 text-blue-700" : "hover:bg-gray-100"
+                  } ${canSelect ? "" : "cursor-not-allowed text-gray-300"}`}
+                >
+                  <span>{shift.name}</span>
+                  <span className="text-xs text-gray-400">{shift.code}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="border-t border-gray-200">
+            <button
+              type="button"
+              onClick={() => handlePreferenceSelect(null)}
+              className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+            >
+              希望シフトを解除
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
