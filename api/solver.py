@@ -37,21 +37,52 @@ def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]
     return shift_start < end and shift_end > start
 
 
-def _build_time_ranges(shifts: Dict[str, Dict[str, int]]) -> Dict[str, List[str]]:
+def _build_time_ranges(
+    shifts: Dict[str, Dict[str, int]]
+) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
+    """Return mappings for same-day and carry-over coverage per time range."""
+
     intervals: Dict[str, Tuple[int, int]] = {
         "7-9": (7, 9),
         "9-15": (9, 15),
         "16-18": (16, 18),
         "18-24": (18, 24),
-        "0-7": (24, 31),  # treat as 24-31 to account for night shifts
+        "0-7": (0, 7),
     }
 
-    time_ranges: Dict[str, List[str]] = {key: [] for key in intervals}
+    same_day: Dict[str, List[str]] = {key: [] for key in intervals}
+    carry_over: Dict[str, List[str]] = {key: [] for key in intervals}
+
     for code, shift in shifts.items():
-        for label, interval in intervals.items():
-            if _covers_interval(shift["start"], shift["end"], interval):
-                time_ranges[label].append(code)
-    return time_ranges
+        start = shift["start"]
+        end = shift["end"]
+        effective_end = min(end, 24)
+
+        for label, (range_start, range_end) in intervals.items():
+            if start < range_end and effective_end > range_start:
+                same_day[label].append(code)
+
+            if end <= 24:
+                continue
+
+            after_midnight_start = max(start, 24) - 24
+            after_midnight_end = end - 24
+
+            if after_midnight_start < range_end and after_midnight_end > range_start:
+                carry_over[label].append(code)
+
+    # Remove duplicates while preserving insertion order for determinism
+    for mapping in (same_day, carry_over):
+        for label, codes in mapping.items():
+            seen = set()
+            deduped: List[str] = []
+            for code in codes:
+                if code not in seen:
+                    seen.add(code)
+                    deduped.append(code)
+            mapping[label] = deduped
+
+    return same_day, carry_over
 
 
 def _build_specific_time_ranges(
@@ -74,7 +105,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
     num_people = len(people)
     shifts = {s["code"]: s for s in data["shifts"]}
     all_shift_codes = list(shifts.keys())
-    time_ranges = _build_time_ranges(shifts)
+    time_ranges, carry_over_ranges = _build_time_ranges(shifts)
 
     model = cp_model.CpModel()
 
@@ -164,7 +195,19 @@ def solve_shift_scheduling(request: ScheduleRequest):
         needs = data["needTemplate"][day_type]
         for label, related_shifts in time_ranges.items():
             need_value = needs[label]
-            actual = sum(work[p, d, s_code] for p in range(num_people) for s_code in related_shifts)
+            actual = sum(
+                work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
+            )
+
+            if d > 0:
+                carry_shifts = carry_over_ranges.get(label, [])
+                if carry_shifts:
+                    carry_actual = sum(
+                        work[p, d - 1, s_code]
+                        for p in range(num_people)
+                        for s_code in carry_shifts
+                    )
+                    actual += carry_actual
             shortage = model.NewIntVar(0, need_value, f"shortage_{d}_{label}")
             overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
             model.Add(actual + shortage >= need_value)
