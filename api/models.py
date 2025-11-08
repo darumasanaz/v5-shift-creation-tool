@@ -43,9 +43,21 @@ class NightRest(BaseModel):
     NC: int
 
 
+class PairShiftConflictRule(BaseModel):
+    firstPersonShifts: List[str]
+    secondPersonShifts: List[str]
+    dayOffset: int = 0
+
+
+class PairShiftConflict(BaseModel):
+    people: List[str]
+    rules: List[PairShiftConflictRule]
+
+
 class Rules(BaseModel):
     noEarlyAfterDayAB: bool
     nightRest: NightRest
+    pairShiftConflicts: List[PairShiftConflict] = Field(default_factory=list)
 
 
 class Weights(BaseModel):
@@ -76,6 +88,7 @@ class ScheduleRequest(BaseModel):
     people: List[Person]
     wishOffs: Dict[str, List[int]]
     shiftPreferences: Dict[str, Dict[int, str]] = Field(default_factory=dict)
+    pairShiftConflicts: List[PairShiftConflict] = Field(default_factory=list)
 
 
 class ShortageInfo(BaseModel):

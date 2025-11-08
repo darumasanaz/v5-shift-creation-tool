@@ -336,7 +336,24 @@
       "NA": 2,
       "NB": 1,
       "NC": 1
-    }
+    },
+    "pairShiftConflicts": [
+      {
+        "people": ["森川孝", "柴田"],
+        "rules": [
+          {
+            "firstPersonShifts": ["NA"],
+            "secondPersonShifts": ["NC"],
+            "dayOffset": 0
+          },
+          {
+            "firstPersonShifts": ["EA", "NA"],
+            "secondPersonShifts": ["NC"],
+            "dayOffset": 1
+          }
+        ]
+      }
+    ]
   },
   "weights": {
     "W_shortage": 1000,
