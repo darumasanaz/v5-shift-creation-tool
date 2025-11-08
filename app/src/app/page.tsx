@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   InitialData,
   Person,
@@ -16,6 +16,7 @@ import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
 import ShortageSummary from "../components/ShortageSummary";
+const PrintPreview = lazy(() => import("../components/PrintPreview"));
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
@@ -30,6 +31,23 @@ export default function Home() {
   const [editingStaff, setEditingStaff] = useState<Person | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
+  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [isPrintPreviewMounted, setIsPrintPreviewMounted] = useState(false);
+  const [printGeneratedAt, setPrintGeneratedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPrintPreviewOpen && isPrintPreviewMounted) {
+      const timeout = window.setTimeout(() => {
+        setIsPrintPreviewMounted(false);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timeout);
+      };
+    }
+
+    return undefined;
+  }, [isPrintPreviewMounted, isPrintPreviewOpen]);
 
   useEffect(() => {
     return () => {
@@ -118,6 +136,16 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
+  const handleOpenPrintPreview = () => {
+    setPrintGeneratedAt(new Date().toLocaleString());
+    setIsPrintPreviewMounted(true);
+    setIsPrintPreviewOpen(true);
+  };
+
+  const handleClosePrintPreview = () => {
+    setIsPrintPreviewOpen(false);
+  };
+
   const handleUpdateStaff = (updatedStaff: Person) => {
     setPeople((prev) => prev.map((person) => (person.id === updatedStaff.id ? updatedStaff : person)));
     setEditingStaff(null);
@@ -144,13 +172,20 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col h-screen font-sans">
+    <>
+      <div className={`flex flex-col h-screen font-sans ${isPrintPreviewOpen ? "print-source-hidden" : ""}`}>
       <header className="bg-white shadow-md p-4 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Shift Scheduler v5</h1>
           {statusMessage && <p className="text-sm text-gray-500 mt-1">状態: {statusMessage}</p>}
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleOpenPrintPreview}
+            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
+          >
+            印刷プレビュー
+          </button>
           <button
             onClick={handleExportSchedule}
             className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
@@ -216,6 +251,24 @@ export default function Home() {
           onClose={() => setEditingStaff(null)}
         />
       )}
-    </div>
+      </div>
+
+      {isPrintPreviewMounted && printGeneratedAt && (
+        <Suspense fallback={null}>
+          <PrintPreview
+            isOpen={isPrintPreviewOpen}
+            initialData={initialData}
+            people={people}
+            schedule={schedule}
+            wishOffs={wishOffs}
+            shiftPreferences={shiftPreferences}
+            shortages={shortages}
+            displayShortages={displayShortages}
+            generatedAt={printGeneratedAt}
+            onClose={handleClosePrintPreview}
+          />
+        </Suspense>
+      )}
+    </>
   );
 }
