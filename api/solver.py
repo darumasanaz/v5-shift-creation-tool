@@ -47,7 +47,8 @@ def _build_time_ranges(
         "9-15": (9, 15),
         "16-18": (16, 18),
         "18-24": (18, 24),
-        "0-7": (0, 7),
+        # Attribute post-midnight hours to the day the shift starts.
+        "0-7": (24, 31),
     }
 
     same_day: Dict[str, List[str]] = {key: [] for key in intervals}
@@ -56,18 +57,20 @@ def _build_time_ranges(
     for code, shift in shifts.items():
         start = shift["start"]
         end = shift["end"]
-        effective_end = min(end, 24)
 
         for label, (range_start, range_end) in intervals.items():
-            if start < range_end and effective_end > range_start:
+            if _covers_interval(start, end, (range_start, range_end)):
                 same_day[label].append(code)
 
-            if end <= 24:
+        if end <= 24:
+            continue
+
+        after_midnight_start = max(start, 24) - 24
+        after_midnight_end = end - 24
+
+        for label, (range_start, range_end) in intervals.items():
+            if range_start >= 24:
                 continue
-
-            after_midnight_start = max(start, 24) - 24
-            after_midnight_end = end - 24
-
             if after_midnight_start < range_end and after_midnight_end > range_start:
                 carry_over[label].append(code)
 

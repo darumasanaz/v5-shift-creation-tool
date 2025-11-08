@@ -45,16 +45,14 @@ const TIME_RANGE_TO_TEMPLATE_RANGE: Record<TimeRangeLabel, NeedTemplateTimeRange
 };
 
 // Intervals are treated as half-open [start, end) ranges measured in hours.
-// The "0-7" bucket represents the early-morning block of the following day,
-// so same-day coverage is contributed via carry-over logic instead of
-// directly matching against this interval.
 const TIME_RANGE_INTERVALS: Record<TimeRangeLabel, [number, number]> = {
   "7-9": [7, 9],
   "9-15": [9, 15],
   "16-18": [16, 18],
   "18-21": [18, 21],
   "21-24": [21, 24],
-  "0-7": [0, 7],
+  // Treat the overnight portion as belonging to the same calendar day.
+  "0-7": [24, 31],
 };
 
 const coversInterval = (shiftStart: number, shiftEnd: number, [start, end]: [number, number]) => {
@@ -188,6 +186,9 @@ export default function Calendar({
 
             TIME_RANGE_ORDER.forEach((label) => {
               const [rangeStart, rangeEnd] = TIME_RANGE_INTERVALS[label];
+              if (rangeStart >= 24) {
+                return;
+              }
               const normalizedStart = rangeStart >= 24 ? rangeStart - 24 : rangeStart;
               const normalizedEnd = rangeEnd > 24 ? rangeEnd - 24 : rangeEnd;
 
