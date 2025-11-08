@@ -75,6 +75,7 @@ class InitialData(BaseModel):
 class ScheduleRequest(BaseModel):
     people: List[Person]
     wishOffs: Dict[str, List[int]]
+    shiftPreferences: Dict[str, Dict[int, str]] = Field(default_factory=dict)
 
 
 class ShortageInfo(BaseModel):
