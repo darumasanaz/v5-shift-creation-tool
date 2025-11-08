@@ -339,16 +339,16 @@
     },
     "pairShiftConflicts": [
       {
-        "people": ["森川孝", "柴田"],
+        "people": ["柴田", "森川孝"],
         "rules": [
           {
-            "firstPersonShifts": ["NA"],
-            "secondPersonShifts": ["NC"],
+            "firstPersonShifts": ["NC"],
+            "secondPersonShifts": ["NA"],
             "dayOffset": 0
           },
           {
-            "firstPersonShifts": ["EA", "NA"],
-            "secondPersonShifts": ["NC"],
+            "firstPersonShifts": ["NC"],
+            "secondPersonShifts": ["EA", "NA"],
             "dayOffset": 1
           }
         ]

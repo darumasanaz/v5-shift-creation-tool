@@ -158,11 +158,11 @@ def solve_shift_scheduling(request: ScheduleRequest):
     ):
         normalized_conflicts.append(
             (
-                "森川孝",
                 "柴田",
+                "森川孝",
                 [
-                    (["NA"], ["NC"], 0),
-                    (["EA", "NA"], ["NC"], 1),
+                    (["NC"], ["NA"], 0),
+                    (["NC"], ["EA", "NA"], 1),
                 ],
             )
         )
