@@ -242,7 +242,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
 
     for night_code, carried_people in previous_month_carry.items():
         rest_days = night_rest.get(night_code, 0)
-        blocked_days = max(rest_days, 1)
+        blocked_days = rest_days + 1
         for person_id in carried_people:
             person_idx = person_indices.get(person_id)
             if person_idx is None:
