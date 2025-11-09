@@ -75,6 +75,7 @@ class InitialData(BaseModel):
     month: int
     days: int
     weekdayOfDay1: int
+    previousMonthNightCarry: Dict[str, List[str]] = Field(default_factory=dict)
     shifts: List[Shift]
     needTemplate: NeedTemplate
     dayTypeByDate: List[str]
