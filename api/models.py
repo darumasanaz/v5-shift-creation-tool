@@ -75,7 +75,7 @@ class InitialData(BaseModel):
     month: int
     days: int
     weekdayOfDay1: int
-    previousMonthNightCarry: Dict[str, List[str]] = Field(default_factory=dict)
+    previousMonthNightCarry: Optional[Dict[str, List[str]]] = None
     shifts: List[Shift]
     needTemplate: NeedTemplate
     dayTypeByDate: List[str]
@@ -89,6 +89,7 @@ class ScheduleRequest(BaseModel):
     people: List[Person]
     wishOffs: Dict[str, List[int]]
     shiftPreferences: Dict[str, Dict[int, str]] = Field(default_factory=dict)
+    previousMonthNightCarry: Optional[Dict[str, List[str]]] = None
     pairShiftConflicts: List[PairShiftConflict] = Field(default_factory=list)
 
 

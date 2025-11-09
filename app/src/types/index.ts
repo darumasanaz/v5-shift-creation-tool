@@ -37,6 +37,7 @@ export interface InitialData {
   people: Person[];
   needTemplate: NeedTemplate;
   dayTypeByDate: string[];
+  previousMonthNightCarry?: Record<string, string[]>;
 }
 
 export type WishOffs = Record<string, number[]>;

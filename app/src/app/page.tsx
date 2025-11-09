@@ -6,6 +6,7 @@ import {
   Person,
   Schedule,
   ScheduleResponse,
+  Shift,
   ShiftPreferences,
   ShortageInfo,
   WishOffs,
@@ -16,6 +17,50 @@ import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
 import ShortageSummary from "../components/ShortageSummary";
+import PreviousNightCarryEditor from "../components/PreviousNightCarryEditor";
+
+const getNightShiftCodes = (shifts: Shift[]): string[] =>
+  shifts.filter((shift) => shift.end > 24).map((shift) => shift.code);
+
+const sanitizeCarry = (
+  carry: Record<string, string[]>,
+  shifts: Shift[],
+  people: Person[],
+): Record<string, string[]> => {
+  const validPersonIds = new Set(people.map((person) => person.id));
+  const nightShiftCodes = getNightShiftCodes(shifts);
+  const next: Record<string, string[]> = {};
+
+  nightShiftCodes.forEach((code) => {
+    const entries = carry[code] ?? [];
+    const filtered = entries.filter((id) => validPersonIds.has(id));
+    if (filtered.length > 0) {
+      next[code] = filtered;
+    }
+  });
+
+  return next;
+};
+
+const mapsEqual = (
+  a: Record<string, string[]>,
+  b: Record<string, string[]>,
+): boolean => {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) {
+    return false;
+  }
+
+  return keysA.every((key) => {
+    const arrA = a[key] ?? [];
+    const arrB = b[key] ?? [];
+    if (arrA.length !== arrB.length) {
+      return false;
+    }
+    return arrA.every((value, index) => value === arrB[index]);
+  });
+};
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
@@ -30,6 +75,7 @@ export default function Home() {
   const [editingStaff, setEditingStaff] = useState<Person | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
+  const [previousMonthNightCarry, setPreviousMonthNightCarry] = useState<Record<string, string[]>>({});
 
   useEffect(() => {
     return () => {
@@ -49,6 +95,10 @@ export default function Home() {
         const data: InitialData = await res.json();
         setInitialData(data);
         setPeople(data.people);
+        setPreviousMonthNightCarry(() => {
+          const initialCarry = data.previousMonthNightCarry ?? {};
+          return sanitizeCarry(initialCarry, data.shifts, data.people);
+        });
       } catch (error) {
         console.error("Failed to fetch initial data:", error);
         setStatusMessage("初期データの取得に失敗しました。リロードしてください。");
@@ -77,7 +127,12 @@ export default function Home() {
       const res = await fetch("/api/generate-schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ people, wishOffs, shiftPreferences }),
+        body: JSON.stringify({
+          people,
+          wishOffs,
+          shiftPreferences,
+          previousMonthNightCarry,
+        }),
       });
       const result: ScheduleResponse = await res.json();
       if (!res.ok) {
@@ -139,6 +194,29 @@ export default function Home() {
     });
   };
 
+  useEffect(() => {
+    if (!initialData) {
+      return;
+    }
+
+    setPreviousMonthNightCarry((prev) => {
+      const sanitized = sanitizeCarry(prev, initialData.shifts, people);
+      if (mapsEqual(prev, sanitized)) {
+        return prev;
+      }
+      return sanitized;
+    });
+  }, [initialData, people]);
+
+  const handlePreviousCarryChange = (next: Record<string, string[]>) => {
+    if (!initialData) {
+      setPreviousMonthNightCarry(next);
+      return;
+    }
+    const sanitized = sanitizeCarry(next, initialData.shifts, people);
+    setPreviousMonthNightCarry(sanitized);
+  };
+
   if (!initialData) {
     return <div className="p-4">Loading initial data...</div>;
   }
@@ -176,6 +254,12 @@ export default function Home() {
             onEditStaff={setEditingStaff}
           />
           <ShiftDisplay selectedStaff={selectedStaff} schedule={schedule} />
+          <PreviousNightCarryEditor
+            shifts={initialData.shifts}
+            people={people}
+            value={previousMonthNightCarry}
+            onChange={handlePreviousCarryChange}
+          />
         </div>
         <div className="flex-1 flex flex-col gap-4 overflow-hidden">
           <div className="flex-1 min-h-0 overflow-auto bg-white rounded-lg shadow">
