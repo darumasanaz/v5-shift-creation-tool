@@ -319,7 +319,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
     model.Minimize(sum(penalties))
 
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = 200.0
+    solver.parameters.max_time_in_seconds = 60.0
     status = solver.Solve(model)
 
     schedule: Dict[str, List[Optional[str]]] = {}
