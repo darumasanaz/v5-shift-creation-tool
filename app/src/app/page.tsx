@@ -16,7 +16,6 @@ import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
 import ShortageSummary from "../components/ShortageSummary";
-import PrintPreview from "../components/PrintPreview";
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
@@ -31,7 +30,6 @@ export default function Home() {
   const [editingStaff, setEditingStaff] = useState<Person | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
-  const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -146,20 +144,13 @@ export default function Home() {
   }
 
   return (
-    <>
-      <div className={`flex flex-col h-screen font-sans ${isPrintPreviewOpen ? "print-source-hidden" : ""}`}>
+    <div className="flex flex-col h-screen font-sans">
       <header className="bg-white shadow-md p-4 flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Shift Scheduler v5</h1>
           {statusMessage && <p className="text-sm text-gray-500 mt-1">状態: {statusMessage}</p>}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={() => setIsPrintPreviewOpen(true)}
-            className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
-          >
-            印刷プレビュー
-          </button>
           <button
             onClick={handleExportSchedule}
             className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
@@ -225,19 +216,6 @@ export default function Home() {
           onClose={() => setEditingStaff(null)}
         />
       )}
-      </div>
-
-      <PrintPreview
-        isOpen={isPrintPreviewOpen}
-        initialData={initialData}
-        people={people}
-        schedule={schedule}
-        wishOffs={wishOffs}
-        shiftPreferences={shiftPreferences}
-        shortages={shortages}
-        displayShortages={displayShortages}
-        onClose={() => setIsPrintPreviewOpen(false)}
-      />
-    </>
+    </div>
   );
 }
