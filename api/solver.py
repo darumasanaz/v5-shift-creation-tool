@@ -230,12 +230,27 @@ def solve_shift_scheduling(request: ScheduleRequest):
             for s_code in all_shift_codes:
                 if s_code not in allowed:
                     model.Add(work[p, d, s_code] == 0)
-                    
+
+    wish_offs = request.wishOffs or {}
+    raw_paid_leaves = request.paidLeaves or {}
+    paid_leave_days_by_index: Dict[int, Set[int]] = {}
+    for p_idx, person in enumerate(people):
+        entries = raw_paid_leaves.get(person.id, [])
+        if not isinstance(entries, list):
+            continue
+        normalized_days: Set[int] = set()
+        for day in entries:
+            if isinstance(day, int) and 0 <= day < num_days:
+                normalized_days.add(day)
+        if normalized_days:
+            paid_leave_days_by_index[p_idx] = normalized_days
+
     # Monthly minimum/maximum assignments
     for p in range(num_people):
         total_days = sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes)
-        model.Add(total_days >= people[p].monthlyMin)
-        model.Add(total_days <= people[p].monthlyMax)
+        paid_leave_count = len(paid_leave_days_by_index.get(p, set()))
+        model.Add(total_days + paid_leave_count >= people[p].monthlyMin)
+        model.Add(total_days + paid_leave_count <= people[p].monthlyMax)
 
     # Night shift rest enforcement
     night_rest: Dict[str, int] = data["rules"]["nightRest"]
@@ -279,8 +294,6 @@ def solve_shift_scheduling(request: ScheduleRequest):
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
     start_weekday = data["weekdayOfDay1"] % 7
-    wish_offs = request.wishOffs or {}
-
     for p in range(num_people):
         fixed_off = set(people[p].fixedOffWeekdays)
         for d in range(num_days):
@@ -293,6 +306,10 @@ def solve_shift_scheduling(request: ScheduleRequest):
             if 0 <= d < num_days:
                 for s_code in all_shift_codes:
                     model.Add(work[p, d, s_code] == 0)
+        paid_leave_days = paid_leave_days_by_index.get(p, set())
+        for d in paid_leave_days:
+            for s_code in all_shift_codes:
+                model.Add(work[p, d, s_code] == 0)
 
     # Soft constraints -----------------------------------------------------
     penalties: List[cp_model.LinearExpr] = []
@@ -374,7 +391,11 @@ def solve_shift_scheduling(request: ScheduleRequest):
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         for p_idx, person in enumerate(people):
             assignments: List[Optional[str]] = []
+            paid_leave_days = paid_leave_days_by_index.get(p_idx, set())
             for d in range(num_days):
+                if d in paid_leave_days:
+                    assignments.append("有給")
+                    continue
                 assigned = None
                 for s_code in all_shift_codes:
                     if solver.Value(work[p_idx, d, s_code]):

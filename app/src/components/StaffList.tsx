@@ -12,7 +12,9 @@ export default function StaffList({ people, selectedStaff, onSelectStaff, onEdit
   return (
     <div className="bg-white p-4 rounded-lg shadow">
       <h2 className="text-lg font-bold mb-3 text-gray-800">スタッフ一覧</h2>
-      <p className="text-xs text-gray-500 mb-3">クリックで希望休入力、鉛筆アイコンで契約編集</p>
+      <p className="text-xs text-gray-500 mb-3">
+        クリックで希望休、ダブルクリックで有給入力、鉛筆アイコンで契約編集
+      </p>
       <ul className="space-y-2">
         {people.map((person) => (
           <li key={person.id}>

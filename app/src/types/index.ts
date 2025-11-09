@@ -28,6 +28,10 @@ export interface NeedTemplateDetail {
 
 export type NeedTemplate = Record<string, NeedTemplateDetail>;
 
+export type WishOffs = Record<string, number[]>;
+
+export type PaidLeaveRequests = Record<string, number[]>;
+
 export interface InitialData {
   year: number;
   month: number;
@@ -38,9 +42,8 @@ export interface InitialData {
   needTemplate: NeedTemplate;
   dayTypeByDate: string[];
   previousMonthNightCarry?: Record<string, string[]>;
+  paidLeaves?: PaidLeaveRequests;
 }
-
-export type WishOffs = Record<string, number[]>;
 
 export type ShiftPreferences = Record<string, Record<number, string>>;
 
