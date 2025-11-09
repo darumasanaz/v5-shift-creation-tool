@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from ortools.sat.python import cp_model
 
@@ -113,6 +113,39 @@ def solve_shift_scheduling(request: ScheduleRequest):
     all_shift_codes = list(shifts.keys())
     time_ranges, carry_over_ranges = _build_time_ranges(shifts)
 
+    raw_previous_carry = (
+        request.previousMonthNightCarry
+        if request.previousMonthNightCarry is not None
+        else data.get("previousMonthNightCarry", {})
+    )
+
+    if not isinstance(raw_previous_carry, dict):
+        raw_previous_carry = {}
+
+    valid_shift_codes = set(all_shift_codes)
+    previous_month_carry: Dict[str, List[str]] = {}
+    for s_code, entries in raw_previous_carry.items():
+        if s_code not in valid_shift_codes:
+            continue
+        if not isinstance(entries, list):
+            continue
+        seen_people: Set[str] = set()
+        deduped: List[str] = []
+        for person_id in entries:
+            if not isinstance(person_id, str):
+                continue
+            if person_id in seen_people:
+                continue
+            seen_people.add(person_id)
+            deduped.append(person_id)
+        if deduped:
+            previous_month_carry[s_code] = deduped
+    previous_carry_counts: Dict[str, int] = {label: 0 for label in time_ranges}
+    for label, carry_shifts in carry_over_ranges.items():
+        previous_carry_counts[label] = sum(
+            len(previous_month_carry.get(s_code, [])) for s_code in carry_shifts
+        )
+
     model = cp_model.CpModel()
 
     work = {}
@@ -206,6 +239,17 @@ def solve_shift_scheduling(request: ScheduleRequest):
 
     # Night shift rest enforcement
     night_rest: Dict[str, int] = data["rules"]["nightRest"]
+
+    for night_code, carried_people in previous_month_carry.items():
+        rest_days = night_rest.get(night_code, 0)
+        blocked_days = max(rest_days, 1)
+        for person_id in carried_people:
+            person_idx = person_indices.get(person_id)
+            if person_idx is None:
+                continue
+            for day_offset in range(min(num_days, blocked_days)):
+                for s_code in all_shift_codes:
+                    model.Add(work[person_idx, day_offset, s_code] == 0)
     for p in range(num_people):
         can_work = set(people[p].canWork)
         for night_code, rest_days in night_rest.items():
@@ -277,6 +321,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
                         for s_code in carry_shifts
                     )
                     actual += carry_actual
+            else:
+                actual += previous_carry_counts.get(label, 0)
             shortage = model.NewIntVar(0, need_value, f"shortage_{d}_{label}")
             overstaff = model.NewIntVar(0, num_people, f"overstaff_{d}_{label}")
             model.Add(actual + shortage >= need_value)
