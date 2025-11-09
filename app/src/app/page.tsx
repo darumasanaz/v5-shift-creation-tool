@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import {
   InitialData,
   Person,
@@ -16,7 +16,7 @@ import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
 import ShortageSummary from "../components/ShortageSummary";
-import PrintPreview from "../components/PrintPreview";
+const PrintPreview = lazy(() => import("../components/PrintPreview"));
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
@@ -32,6 +32,22 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
   const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
+  const [isPrintPreviewMounted, setIsPrintPreviewMounted] = useState(false);
+  const [printGeneratedAt, setPrintGeneratedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isPrintPreviewOpen && isPrintPreviewMounted) {
+      const timeout = window.setTimeout(() => {
+        setIsPrintPreviewMounted(false);
+      }, 0);
+
+      return () => {
+        window.clearTimeout(timeout);
+      };
+    }
+
+    return undefined;
+  }, [isPrintPreviewMounted, isPrintPreviewOpen]);
 
   useEffect(() => {
     return () => {
@@ -120,6 +136,16 @@ export default function Home() {
     document.body.removeChild(link);
   };
 
+  const handleOpenPrintPreview = () => {
+    setPrintGeneratedAt(new Date().toLocaleString());
+    setIsPrintPreviewMounted(true);
+    setIsPrintPreviewOpen(true);
+  };
+
+  const handleClosePrintPreview = () => {
+    setIsPrintPreviewOpen(false);
+  };
+
   const handleUpdateStaff = (updatedStaff: Person) => {
     setPeople((prev) => prev.map((person) => (person.id === updatedStaff.id ? updatedStaff : person)));
     setEditingStaff(null);
@@ -155,7 +181,7 @@ export default function Home() {
         </div>
         <div className="flex gap-2">
           <button
-            onClick={() => setIsPrintPreviewOpen(true)}
+            onClick={handleOpenPrintPreview}
             className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
           >
             印刷プレビュー
@@ -227,17 +253,22 @@ export default function Home() {
       )}
       </div>
 
-      <PrintPreview
-        isOpen={isPrintPreviewOpen}
-        initialData={initialData}
-        people={people}
-        schedule={schedule}
-        wishOffs={wishOffs}
-        shiftPreferences={shiftPreferences}
-        shortages={shortages}
-        displayShortages={displayShortages}
-        onClose={() => setIsPrintPreviewOpen(false)}
-      />
+      {isPrintPreviewMounted && printGeneratedAt && (
+        <Suspense fallback={null}>
+          <PrintPreview
+            isOpen={isPrintPreviewOpen}
+            initialData={initialData}
+            people={people}
+            schedule={schedule}
+            wishOffs={wishOffs}
+            shiftPreferences={shiftPreferences}
+            shortages={shortages}
+            displayShortages={displayShortages}
+            generatedAt={printGeneratedAt}
+            onClose={handleClosePrintPreview}
+          />
+        </Suspense>
+      )}
     </>
   );
 }
