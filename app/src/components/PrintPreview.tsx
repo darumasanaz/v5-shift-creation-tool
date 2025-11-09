@@ -19,7 +19,6 @@ interface PrintPreviewProps {
   shiftPreferences: ShiftPreferences;
   shortages: ShortageInfo[];
   displayShortages: ShortageInfo[];
-  generatedAt: string;
   onClose: () => void;
 }
 
@@ -34,7 +33,6 @@ export default function PrintPreview({
   shiftPreferences,
   shortages,
   displayShortages,
-  generatedAt,
   onClose,
 }: PrintPreviewProps) {
   useEffect(() => {
@@ -103,7 +101,7 @@ export default function PrintPreview({
           <header className="print-preview-header">
             <h1 className="text-2xl font-bold text-gray-900">Shift Scheduler v5</h1>
             <p className="text-base text-gray-600">{monthLabel} シフト表</p>
-            <p className="text-xs text-gray-400">最終更新: {generatedAt}</p>
+            <p className="text-xs text-gray-400">最終更新: {new Date().toLocaleString()}</p>
           </header>
 
           <div className="print-preview-calendar">
