@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  CoverageBreakdown,
   InitialData,
   PaidLeaveRequests,
   Person,
@@ -9,6 +10,7 @@ import {
   ScheduleResponse,
   Shift,
   ShiftPreferences,
+  DisplayShortageInfo,
   ShortageInfo,
   WishOffs,
 } from "../types";
@@ -71,7 +73,8 @@ export default function Home() {
   const [shiftPreferences, setShiftPreferences] = useState<ShiftPreferences>({});
   const [schedule, setSchedule] = useState<Schedule>({});
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
-  const [displayShortages, setDisplayShortages] = useState<ShortageInfo[]>([]);
+  const [displayShortages, setDisplayShortages] = useState<DisplayShortageInfo[]>([]);
+  const [coverageBreakdown, setCoverageBreakdown] = useState<CoverageBreakdown>({});
   const [isLoading, setIsLoading] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Person | null>(null);
   const [editingStaff, setEditingStaff] = useState<Person | null>(null);
@@ -168,6 +171,7 @@ export default function Home() {
     setSchedule({});
     setShortages([]);
     setDisplayShortages([]);
+    setCoverageBreakdown({});
     try {
       const res = await fetch("/api/generate-schedule", {
         method: "POST",
@@ -186,6 +190,7 @@ export default function Home() {
       }
       setSchedule(result.schedule);
       setShortages(result.shortages);
+      setCoverageBreakdown(result.coverageBreakdown ?? {});
       setStatusMessage(result.status);
     } catch (error) {
       console.error("Error generating schedule:", error);
@@ -327,6 +332,7 @@ export default function Home() {
               shifts={initialData.shifts}
               needTemplate={initialData.needTemplate}
               dayTypeByDate={initialData.dayTypeByDate}
+              coverageBreakdown={coverageBreakdown}
               onShortagesCalculated={setDisplayShortages}
             />
           </div>

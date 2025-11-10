@@ -55,9 +55,23 @@ export interface ShortageInfo {
   shortage: number;
 }
 
+export interface DisplayShortageInfo extends ShortageInfo {
+  need?: number;
+  actual?: number;
+}
+
+export interface CoverageInfo {
+  need: number;
+  actual: number;
+  shortage: number;
+}
+
+export type CoverageBreakdown = Record<number, Record<string, CoverageInfo>>;
+
 export interface ScheduleResponse {
   schedule: Schedule;
   shortages: ShortageInfo[];
+  coverageBreakdown: CoverageBreakdown;
   status: string;
   message?: string;
 }
