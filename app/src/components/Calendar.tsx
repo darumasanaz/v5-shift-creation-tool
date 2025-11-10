@@ -326,23 +326,6 @@ export default function Calendar({
       rows.forEach((row) => {
         row.byDay.set(day, 0);
       });
-    });
-
-    if (fallbackLabelSet.size > 0) {
-      for (let day = 1; day <= days; day += 1) {
-        const dayTypeKey = normalizedDayTypes[day - 1];
-        const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
-
-        fallbackLabelSet.forEach((label) => {
-          const row = rowByLabel.get(label);
-          if (!row) {
-            return;
-          }
-          const templateRange = TIME_RANGE_TO_TEMPLATE_RANGE[label];
-          const requirement = template ? template[templateRange] ?? 0 : 0;
-          row.byDay.set(day, requirement);
-        });
-      }
     }
 
     Object.entries(coverageBreakdown ?? {}).forEach(([dayKey, ranges]) => {
@@ -436,13 +419,18 @@ export default function Calendar({
     });
 
     fallbackLabelSet.forEach((label) => {
+      if (!isTimeRangeLabel(label)) {
+        return;
+      }
       const row = baseRowByLabel.get(label);
       if (!row) {
         return;
       }
+      const requirementRow = requirementByLabel.get(label);
+      const coverageRow = coverageByLabel.get(label);
       for (let day = 1; day <= days; day += 1) {
-        const requirement = requirementByLabel.get(label)?.get(day) ?? 0;
-        const coverage = coverageByLabel.get(label)?.get(day) ?? 0;
+        const requirement = requirementRow?.get(day) ?? 0;
+        const coverage = coverageRow?.get(day) ?? 0;
         const shortageValue = Math.max(requirement - coverage, 0);
         row.byDay.set(day, shortageValue);
       }
@@ -490,14 +478,16 @@ export default function Calendar({
           return;
         }
 
-        const needValue = isTimeRangeLabel(row.label)
-          ? requirementByLabel.get(row.label)?.get(day)
-          : undefined;
-        const actualValue = isTimeRangeLabel(row.label)
-          ? coverageByLabel.get(row.label)?.get(day)
-          : undefined;
-        const normalizedNeed = typeof needValue === "number" ? needValue : undefined;
-        const normalizedActual = typeof actualValue === "number" ? actualValue : undefined;
+        let normalizedNeed: number | undefined;
+        let normalizedActual: number | undefined;
+        if (isTimeRangeLabel(row.label)) {
+          const requirementRow = requirementByLabel.get(row.label);
+          const coverageRow = coverageByLabel.get(row.label);
+          const needValue = requirementRow?.get(day);
+          const actualValue = coverageRow?.get(day);
+          normalizedNeed = typeof needValue === "number" ? needValue : undefined;
+          normalizedActual = typeof actualValue === "number" ? actualValue : undefined;
+        }
         const ratio =
           normalizedNeed && normalizedNeed > 0
             ? Math.min(value / normalizedNeed, 2)
