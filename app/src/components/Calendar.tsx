@@ -4,6 +4,7 @@ import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtil
 import {
   NeedTemplate,
   NeedTemplateTimeRange,
+  PaidLeaveRequests,
   Person,
   Schedule,
   Shift,
@@ -20,9 +21,11 @@ interface CalendarProps {
   people: Person[];
   schedule: Schedule;
   wishOffs: WishOffs;
+  paidLeaves: PaidLeaveRequests;
   shiftPreferences: ShiftPreferences;
   selectedStaff: Person | null;
   onWishOffToggle: (personId: string, dayIndex: number) => void;
+  onPaidLeaveToggle: (personId: string, dayIndex: number) => void;
   onShiftPreferenceChange: (personId: string, dayIndex: number, shiftCode: string | null) => void;
   shortages: ShortageInfo[];
   shifts: Shift[];
@@ -122,9 +125,11 @@ export default function Calendar({
   people,
   schedule,
   wishOffs,
+  paidLeaves,
   shiftPreferences,
   selectedStaff,
   onWishOffToggle,
+  onPaidLeaveToggle,
   onShiftPreferenceChange,
   shortages,
   shifts,
@@ -153,6 +158,18 @@ export default function Calendar({
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const clickTimeoutRef = useRef<number | null>(null);
+  const pendingClickRef = useRef<{ personId: string; dayIndex: number } | null>(null);
+
+  const clearClickTimeout = useCallback(() => {
+    if (clickTimeoutRef.current !== null) {
+      if (typeof window !== "undefined") {
+        window.clearTimeout(clickTimeoutRef.current);
+      }
+      clickTimeoutRef.current = null;
+    }
+    pendingClickRef.current = null;
+  }, []);
 
   const coverageRows = useMemo(() => {
     const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
@@ -331,11 +348,38 @@ export default function Calendar({
     onShortagesCalculated(shortageComputation.list);
   }, [onShortagesCalculated, shortageComputation.list]);
 
-  const handleDayClick = (personId: string, dayIndex: number) => {
-    if (selectedStaff && selectedStaff.id === personId) {
-      onWishOffToggle(personId, dayIndex);
-    }
-  };
+  const handleDayClick = useCallback(
+    (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (!selectedStaff || selectedStaff.id !== personId) {
+        return;
+      }
+      if (typeof window === "undefined") {
+        onWishOffToggle(personId, dayIndex);
+        return;
+      }
+      clearClickTimeout();
+      pendingClickRef.current = { personId, dayIndex };
+      clickTimeoutRef.current = window.setTimeout(() => {
+        if (pendingClickRef.current) {
+          onWishOffToggle(pendingClickRef.current.personId, pendingClickRef.current.dayIndex);
+        }
+        clearClickTimeout();
+      }, 200);
+    },
+    [selectedStaff, onWishOffToggle, clearClickTimeout],
+  );
+
+  const handleDayDoubleClick = useCallback(
+    (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (!selectedStaff || selectedStaff.id !== personId) {
+        return;
+      }
+      event.preventDefault();
+      clearClickTimeout();
+      onPaidLeaveToggle(personId, dayIndex);
+    },
+    [selectedStaff, onPaidLeaveToggle, clearClickTimeout],
+  );
 
   const handleContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
@@ -391,6 +435,12 @@ export default function Calendar({
     }
   }, [contextMenu, selectedStaff]);
 
+  useEffect(() => {
+    return () => {
+      clearClickTimeout();
+    };
+  }, [clearClickTimeout]);
+
   const activePreference = contextMenu
     ? shiftPreferences[contextMenu.personId]?.[contextMenu.dayIndex] ?? null
     : null;
@@ -429,7 +479,7 @@ export default function Calendar({
           {year}年 {month}月
         </h2>
         <p className="text-xs text-gray-500">
-          セルをクリックして希望休、右クリックして希望シフトを設定できます
+          セルをクリックで希望休、ダブルクリックで有給、右クリックで希望シフトを設定できます
         </p>
       </div>
       <table className="w-full border-collapse text-sm text-center">
@@ -462,7 +512,11 @@ export default function Calendar({
               {Array.from({ length: days }, (_, dayIndex) => {
                 const day = dayIndex + 1;
                 const isWishedOff = wishOffs[person.id]?.includes(dayIndex) ?? false;
-                const shift = schedule[person.id]?.[dayIndex] ?? null;
+                const assignedValue = schedule[person.id]?.[dayIndex] ?? null;
+                const isPaidLeaveRequested = paidLeaves[person.id]?.includes(dayIndex) ?? false;
+                const isPaidLeaveScheduled = assignedValue === "有給";
+                const showPaidLeave = isPaidLeaveRequested || isPaidLeaveScheduled;
+                const shift = showPaidLeave ? null : assignedValue;
                 const isSelected = selectedStaff?.id === person.id;
                 const preferredShiftCode = shiftPreferences[person.id]?.[dayIndex] ?? null;
                 const preferredShift = preferredShiftCode ? shiftByCode.get(preferredShiftCode) : null;
@@ -470,18 +524,30 @@ export default function Calendar({
                 return (
                   <td
                     key={`${person.id}-${day}`}
-                    onClick={() => handleDayClick(person.id, dayIndex)}
+                    onClick={(event) => handleDayClick(event, person.id, dayIndex)}
+                    onDoubleClick={(event) => handleDayDoubleClick(event, person.id, dayIndex)}
                     onContextMenu={(event) => handleContextMenu(event, person.id, dayIndex)}
                     className={`p-2 border border-gray-300 relative ${
                       isSelected ? "cursor-pointer" : ""
-                    } ${isWishedOff ? "bg-red-50" : ""} ${
-                      preferredShiftCode && !isWishedOff ? "ring-2 ring-inset ring-blue-300" : ""
+                    } ${showPaidLeave ? "bg-amber-50" : ""} ${
+                      !showPaidLeave && isWishedOff ? "bg-red-50" : ""
+                    } ${
+                      preferredShiftCode && !isWishedOff && !showPaidLeave
+                        ? "ring-2 ring-inset ring-blue-300"
+                        : ""
                     }`}
                   >
-                    {isWishedOff && <span className="text-red-500 font-bold">休</span>}
-                    {shift && <span className="font-bold text-blue-700">{shift}</span>}
-                    {!isWishedOff && !shift && <span className="text-gray-300">-</span>}
-                    {preferredShiftCode && (
+                    {showPaidLeave && <span className="text-amber-600 font-bold">有給</span>}
+                    {!showPaidLeave && isWishedOff && (
+                      <span className="text-red-500 font-bold">休</span>
+                    )}
+                    {!showPaidLeave && !isWishedOff && shift && (
+                      <span className="font-bold text-blue-700">{shift}</span>
+                    )}
+                    {!showPaidLeave && !isWishedOff && !shift && (
+                      <span className="text-gray-300">-</span>
+                    )}
+                    {preferredShiftCode && !isWishedOff && !showPaidLeave && (
                       <span className="absolute bottom-1 right-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200 shadow-sm">
                         希望:
                         {preferredShift?.name ?? preferredShiftCode}

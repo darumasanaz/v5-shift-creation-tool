@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   InitialData,
+  PaidLeaveRequests,
   Person,
   Schedule,
   ScheduleResponse,
@@ -66,6 +67,7 @@ export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [wishOffs, setWishOffs] = useState<WishOffs>({});
+  const [paidLeaves, setPaidLeaves] = useState<PaidLeaveRequests>({});
   const [shiftPreferences, setShiftPreferences] = useState<ShiftPreferences>({});
   const [schedule, setSchedule] = useState<Schedule>({});
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
@@ -95,6 +97,7 @@ export default function Home() {
         const data: InitialData = await res.json();
         setInitialData(data);
         setPeople(data.people);
+        setPaidLeaves(data.paidLeaves ?? {});
         setPreviousMonthNightCarry(() => {
           const initialCarry = data.previousMonthNightCarry ?? {};
           return sanitizeCarry(initialCarry, data.shifts, data.people);
@@ -113,6 +116,48 @@ export default function Home() {
       const updated = current.includes(dayIndex)
         ? current.filter((value) => value !== dayIndex)
         : [...current, dayIndex];
+      if (updated.length === 0) {
+        const { [personId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [personId]: updated };
+    });
+    setPaidLeaves((prev) => {
+      const current = prev[personId] ?? [];
+      if (!current.includes(dayIndex)) {
+        return prev;
+      }
+      const updated = current.filter((value) => value !== dayIndex);
+      if (updated.length === 0) {
+        const { [personId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [personId]: updated };
+    });
+  };
+
+  const handlePaidLeaveToggle = (personId: string, dayIndex: number) => {
+    setPaidLeaves((prev) => {
+      const current = prev[personId] ?? [];
+      const updated = current.includes(dayIndex)
+        ? current.filter((value) => value !== dayIndex)
+        : [...current, dayIndex];
+      if (updated.length === 0) {
+        const { [personId]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [personId]: updated };
+    });
+    setWishOffs((prev) => {
+      const current = prev[personId] ?? [];
+      if (!current.includes(dayIndex)) {
+        return prev;
+      }
+      const updated = current.filter((value) => value !== dayIndex);
+      if (updated.length === 0) {
+        const { [personId]: _removed, ...rest } = prev;
+        return rest;
+      }
       return { ...prev, [personId]: updated };
     });
   };
@@ -130,6 +175,7 @@ export default function Home() {
         body: JSON.stringify({
           people,
           wishOffs,
+          paidLeaves,
           shiftPreferences,
           previousMonthNightCarry,
         }),
@@ -271,9 +317,11 @@ export default function Home() {
               people={people}
               schedule={schedule}
               wishOffs={wishOffs}
+              paidLeaves={paidLeaves}
               shiftPreferences={shiftPreferences}
               selectedStaff={selectedStaff}
               onWishOffToggle={handleWishOffToggle}
+              onPaidLeaveToggle={handlePaidLeaveToggle}
               onShiftPreferenceChange={handleShiftPreferenceChange}
               shortages={shortages}
               shifts={initialData.shifts}

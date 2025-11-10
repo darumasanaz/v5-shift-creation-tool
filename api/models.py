@@ -83,11 +83,13 @@ class InitialData(BaseModel):
     rules: Rules
     weights: Weights
     wishOffs: Dict[str, List[int]]
+    paidLeaves: Dict[str, List[int]] = Field(default_factory=dict)
 
 
 class ScheduleRequest(BaseModel):
     people: List[Person]
     wishOffs: Dict[str, List[int]]
+    paidLeaves: Dict[str, List[int]] = Field(default_factory=dict)
     shiftPreferences: Dict[str, Dict[int, str]] = Field(default_factory=dict)
     previousMonthNightCarry: Optional[Dict[str, List[str]]] = None
     pairShiftConflicts: List[PairShiftConflict] = Field(default_factory=list)
