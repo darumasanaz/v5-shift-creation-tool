@@ -42,6 +42,9 @@ const TIME_RANGE_ORDER = ["7-9", "9-15", "16-18", "18-21", "21-24", "0-7"] as co
 
 type TimeRangeLabel = (typeof TIME_RANGE_ORDER)[number];
 
+const isTimeRangeLabel = (label: string): label is TimeRangeLabel =>
+  TIME_RANGE_ORDER.includes(label as TimeRangeLabel);
+
 type ShortageRow = { label: string; byDay: Map<number, number> };
 
 const TIME_RANGE_TO_TEMPLATE_RANGE: Record<TimeRangeLabel, NeedTemplateTimeRange> = {
@@ -211,6 +214,10 @@ export default function Calendar({
       }
 
       Object.entries(ranges ?? {}).forEach(([label, info]) => {
+        if (!isTimeRangeLabel(label)) {
+          return;
+        }
+
         const targetRow = rowByLabel.get(label);
         if (!targetRow) {
           return;
@@ -308,6 +315,10 @@ export default function Calendar({
       }
 
       Object.entries(ranges ?? {}).forEach(([label, info]) => {
+        if (!isTimeRangeLabel(label)) {
+          return;
+        }
+
         const targetRow = rowByLabel.get(label);
         if (!targetRow) {
           return;
