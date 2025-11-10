@@ -473,8 +473,12 @@ export default function Calendar({
           return;
         }
 
-        const needValue = requirementByLabel.get(row.label)?.get(day);
-        const actualValue = coverageByLabel.get(row.label)?.get(day);
+        const needValue = isTimeRangeLabel(row.label)
+          ? requirementByLabel.get(row.label)?.get(day)
+          : undefined;
+        const actualValue = isTimeRangeLabel(row.label)
+          ? coverageByLabel.get(row.label)?.get(day)
+          : undefined;
         const normalizedNeed = typeof needValue === "number" ? needValue : undefined;
         const normalizedActual = typeof actualValue === "number" ? actualValue : undefined;
         const ratio =
