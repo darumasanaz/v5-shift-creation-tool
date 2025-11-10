@@ -30,8 +30,15 @@ def get_initial_data():
 @app.post("/api/generate-schedule", response_model=ScheduleResponse)
 def generate_schedule(request: ScheduleRequest):
     try:
-        schedule, shortages, status = solve_shift_scheduling(request)
-        return ScheduleResponse(schedule=schedule, shortages=shortages, status=status)
+        schedule, shortages, coverage_breakdown, status = solve_shift_scheduling(
+            request
+        )
+        return ScheduleResponse(
+            schedule=schedule,
+            shortages=shortages,
+            coverageBreakdown=coverage_breakdown,
+            status=status,
+        )
     except Exception as exc:  # pragma: no cover - solver fallback
         return ScheduleResponse(
             schedule={},
@@ -39,4 +46,3 @@ def generate_schedule(request: ScheduleRequest):
             status="SOLVER_ERROR",
             message=str(exc),
         )
-
