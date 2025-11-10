@@ -203,6 +203,8 @@ export default function Calendar({
   }, [coverageLabelsFromApi]);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const [showCoverageRows, setShowCoverageRows] = useState(false);
+  const [showRequirementRows, setShowRequirementRows] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const pendingClickRef = useRef<{ personId: string; dayIndex: number } | null>(null);
@@ -678,6 +680,26 @@ export default function Calendar({
           セルをクリックで希望休、ダブルクリックで有給、右クリックで希望シフトを設定できます
         </p>
       </div>
+      <div className="flex flex-wrap items-center gap-4 mb-3 text-sm text-gray-700">
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            checked={showCoverageRows}
+            onChange={(event) => setShowCoverageRows(event.target.checked)}
+          />
+          勤務人数を表示
+        </label>
+        <label className="inline-flex items-center gap-2">
+          <input
+            type="checkbox"
+            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            checked={showRequirementRows}
+            onChange={(event) => setShowRequirementRows(event.target.checked)}
+          />
+          必要人数を表示
+        </label>
+      </div>
       <table className="w-full border-collapse text-sm text-center">
         <thead>
           <tr>
@@ -772,22 +794,23 @@ export default function Calendar({
               })}
             </tr>
           ))}
-          {coverageRows.map(({ label, byDay }) => (
-            <tr key={`coverage-${label}`} className="bg-blue-50">
-              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-blue-100 z-10 whitespace-nowrap text-blue-700">
-                勤務人数 {label}
-              </td>
-              {Array.from({ length: days }, (_, dayIndex) => {
-                const day = dayIndex + 1;
-                const count = byDay.get(day) ?? 0;
-                return (
-                  <td key={`coverage-${label}-${day}`} className="p-2 border border-gray-300">
-                    <span className={count > 0 ? "font-semibold text-blue-700" : "text-gray-400"}>{count}</span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {showCoverageRows &&
+            coverageRows.map(({ label, byDay }) => (
+              <tr key={`coverage-${label}`} className="bg-blue-50">
+                <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-blue-100 z-10 whitespace-nowrap text-blue-700">
+                  勤務人数 {label}
+                </td>
+                {Array.from({ length: days }, (_, dayIndex) => {
+                  const day = dayIndex + 1;
+                  const count = byDay.get(day) ?? 0;
+                  return (
+                    <td key={`coverage-${label}-${day}`} className="p-2 border border-gray-300">
+                      <span className={count > 0 ? "font-semibold text-blue-700" : "text-gray-400"}>{count}</span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
           {shortageRows.map(({ label, byDay }) => (
             <tr key={`shortage-${label}`} className="bg-red-50">
               <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-red-100 z-10 whitespace-nowrap text-red-700">
@@ -807,24 +830,25 @@ export default function Calendar({
               })}
             </tr>
           ))}
-          {requirementRows.map(({ label, byDay }) => (
-            <tr key={`requirement-${label}`} className="bg-amber-50">
-              <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-amber-100 z-10 whitespace-nowrap text-amber-700">
-                必要人数 {label}
-              </td>
-              {Array.from({ length: days }, (_, dayIndex) => {
-                const day = dayIndex + 1;
-                const requirement = byDay.get(day) ?? 0;
-                return (
-                  <td key={`requirement-${label}-${day}`} className="p-2 border border-gray-300">
-                    <span className={requirement > 0 ? "font-semibold text-amber-700" : "text-gray-400"}>
-                      {requirement}
-                    </span>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {showRequirementRows &&
+            requirementRows.map(({ label, byDay }) => (
+              <tr key={`requirement-${label}`} className="bg-amber-50">
+                <td className="p-2 border border-gray-300 font-semibold sticky left-0 bg-amber-100 z-10 whitespace-nowrap text-amber-700">
+                  必要人数 {label}
+                </td>
+                {Array.from({ length: days }, (_, dayIndex) => {
+                  const day = dayIndex + 1;
+                  const requirement = byDay.get(day) ?? 0;
+                  return (
+                    <td key={`requirement-${label}-${day}`} className="p-2 border border-gray-300">
+                      <span className={requirement > 0 ? "font-semibold text-amber-700" : "text-gray-400"}>
+                        {requirement}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
         </tbody>
       </table>
       {contextMenu && (
