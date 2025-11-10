@@ -3,7 +3,7 @@ from typing import Dict, Iterable, List, Optional, Set, Tuple
 
 from ortools.sat.python import cp_model
 
-from .models import ScheduleRequest, ShortageInfo
+from .models import CoverageInfo, ScheduleRequest, ShortageInfo
 
 
 def _load_initial_data() -> Dict:
@@ -22,7 +22,9 @@ def _parse_interval(label: str) -> Tuple[int, int]:
     return start, end
 
 
-def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]) -> bool:
+def _covers_interval(
+    shift_start: int, shift_end: int, interval: Tuple[int, int]
+) -> bool:
     """Return True when a shift touches the target interval."""
 
     start, end = interval
@@ -38,7 +40,7 @@ def _covers_interval(shift_start: int, shift_end: int, interval: Tuple[int, int]
 
 
 def _build_time_ranges(
-    shifts: Dict[str, Dict[str, int]]
+    shifts: Dict[str, Dict[str, int]],
 ) -> Tuple[Dict[str, List[str]], Dict[str, List[str]]]:
     """Return mappings for same-day and carry-over coverage per time range."""
 
@@ -106,7 +108,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
     num_days = data["days"]
     people = request.people
     num_people = len(people)
-    person_indices: Dict[str, int] = {person.id: idx for idx, person in enumerate(people)}
+    person_indices: Dict[str, int] = {
+        person.id: idx for idx, person in enumerate(people)
+    }
     i_morikawa = person_indices.get("森川孝")
     i_shibata = person_indices.get("柴田")
     shifts = {s["code"]: s for s in data["shifts"]}
@@ -175,8 +179,16 @@ def solve_shift_scheduling(request: ScheduleRequest):
         rules = []
         for rule in conflict_dict.get("rules", []):
             rule_dict = _to_dict(rule)
-            first_shifts = [s for s in rule_dict.get("firstPersonShifts", []) if s in all_shift_codes]
-            second_shifts = [s for s in rule_dict.get("secondPersonShifts", []) if s in all_shift_codes]
+            first_shifts = [
+                s
+                for s in rule_dict.get("firstPersonShifts", [])
+                if s in all_shift_codes
+            ]
+            second_shifts = [
+                s
+                for s in rule_dict.get("secondPersonShifts", [])
+                if s in all_shift_codes
+            ]
             if not first_shifts or not second_shifts:
                 continue
             day_offset = int(rule_dict.get("dayOffset", 0))
@@ -187,7 +199,10 @@ def solve_shift_scheduling(request: ScheduleRequest):
     if (
         i_morikawa is not None
         and i_shibata is not None
-        and not any({first, second} == {"森川孝", "柴田"} for first, second, _ in normalized_conflicts)
+        and not any(
+            {first, second} == {"森川孝", "柴田"}
+            for first, second, _ in normalized_conflicts
+        )
     ):
         normalized_conflicts.append(
             (
@@ -247,7 +262,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
 
     # Monthly minimum/maximum assignments
     for p in range(num_people):
-        total_days = sum(work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes)
+        total_days = sum(
+            work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes
+        )
         paid_leave_count = len(paid_leave_days_by_index.get(p, set()))
         model.Add(total_days + paid_leave_count >= people[p].monthlyMin)
         model.Add(total_days + paid_leave_count <= people[p].monthlyMax)
@@ -276,8 +293,10 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 night_work = work[p, d, night_code]
                 for offset in range(1, rest_days + 1):
                     for s_code in all_shift_codes:
-                        model.Add(work[p, d + offset, s_code] == 0).OnlyEnforceIf(night_work)
-    
+                        model.Add(work[p, d + offset, s_code] == 0).OnlyEnforceIf(
+                            night_work
+                        )
+
     # Consecutive working days limit
     for p in range(num_people):
         consec_max = people[p].consecMax
@@ -294,7 +313,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 1 for day in range(d, d + consec_max + 1) if day in paid_leave_days
             )
             model.Add(window + paid_leave_in_window <= consec_max)
-    
+
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
     start_weekday = data["weekdayOfDay1"] % 7
@@ -318,6 +337,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
     # Soft constraints -----------------------------------------------------
     penalties: List[cp_model.LinearExpr] = []
     shortage_vars: Dict[Tuple[int, str], cp_model.IntVar] = {}
+    need_by_day_label: Dict[Tuple[int, str], int] = {}
 
     weights = data["weights"]
     shortage_time_range_weights: Dict[str, int] = weights.get(
@@ -329,8 +349,11 @@ def solve_shift_scheduling(request: ScheduleRequest):
         needs = data["needTemplate"][day_type]
         for label, related_shifts in time_ranges.items():
             need_value = needs[label]
+            need_by_day_label[(d, label)] = need_value
             actual = sum(
-                work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
+                work[p, d, s_code]
+                for p in range(num_people)
+                for s_code in related_shifts
             )
 
             if d > 0:
@@ -375,7 +398,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 if not related_shifts:
                     continue
                 actual = sum(
-                    work[p, d, s_code] for p in range(num_people) for s_code in related_shifts
+                    work[p, d, s_code]
+                    for p in range(num_people)
+                    for s_code in related_shifts
                 )
                 requirements = strict_requirements[label]
                 if requirements.get("min") is not None:
@@ -391,6 +416,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
 
     schedule: Dict[str, List[Optional[str]]] = {}
     shortages: List[ShortageInfo] = []
+    coverage_breakdown: Dict[int, Dict[str, CoverageInfo]] = {
+        d + 1: {} for d in range(num_days)
+    }
 
     if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
         for p_idx, person in enumerate(people):
@@ -408,10 +436,40 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 assignments.append(assigned)
             schedule[person.id] = assignments
 
-        for (day_idx, label), var in shortage_vars.items():
-            value = solver.Value(var)
-            if value > 0:
-                shortages.append(ShortageInfo(day=day_idx + 1, time_range=label, shortage=value))
+        for d in range(num_days):
+            for label, related_shifts in time_ranges.items():
+                need_value = need_by_day_label[(d, label)]
+                base_actual = sum(
+                    solver.Value(work[p, d, s_code])
+                    for p in range(num_people)
+                    for s_code in related_shifts
+                )
+                if d > 0:
+                    carry_actual = sum(
+                        solver.Value(work[p, d - 1, s_code])
+                        for p in range(num_people)
+                        for s_code in carry_over_ranges.get(label, [])
+                    )
+                else:
+                    carry_actual = previous_carry_counts.get(label, 0)
+
+                actual_value = base_actual + carry_actual
+                shortage_value = solver.Value(shortage_vars[(d, label)])
+
+                coverage_breakdown[d + 1][label] = CoverageInfo(
+                    need=need_value,
+                    actual=actual_value,
+                    shortage=shortage_value,
+                )
+
+                if shortage_value > 0:
+                    shortages.append(
+                        ShortageInfo(
+                            day=d + 1,
+                            time_range=label,
+                            shortage=shortage_value,
+                        )
+                    )
 
     status_name = solver.StatusName(status)
-    return schedule, shortages, status_name
+    return schedule, shortages, coverage_breakdown, status_name
