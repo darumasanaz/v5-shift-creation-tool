@@ -55,6 +55,11 @@ export interface ShortageInfo {
   shortage: number;
 }
 
+export interface DisplayShortageInfo extends ShortageInfo {
+  need?: number;
+  actual?: number;
+}
+
 export interface CoverageInfo {
   need: number;
   actual: number;

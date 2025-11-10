@@ -1,4 +1,4 @@
-import type { MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
 import {
@@ -9,6 +9,7 @@ import {
   Person,
   Schedule,
   Shift,
+  DisplayShortageInfo,
   ShortageInfo,
   ShiftPreferences,
   WishOffs,
@@ -33,7 +34,7 @@ interface CalendarProps {
   needTemplate: NeedTemplate;
   dayTypeByDate: string[];
   coverageBreakdown: CoverageBreakdown;
-  onShortagesCalculated?: (shortages: ShortageInfo[]) => void;
+  onShortagesCalculated?: (shortages: DisplayShortageInfo[]) => void;
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -46,6 +47,25 @@ const isTimeRangeLabel = (label: string): label is TimeRangeLabel =>
   TIME_RANGE_ORDER.includes(label as TimeRangeLabel);
 
 type ShortageRow = { label: string; byDay: Map<number, number> };
+
+type DayShortageSnapshot = {
+  total: number;
+  maxRatio: number;
+  dominantRange: string;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(value, max));
+
+const buildSeverityBadgeStyle = (ratio: number): CSSProperties => {
+  const clamped = clamp(Number.isFinite(ratio) ? ratio : 0, 0, 2.5);
+  const backgroundAlpha = 0.18 + clamped * 0.22;
+  const borderAlpha = 0.25 + clamped * 0.25;
+  return {
+    backgroundColor: `rgba(248, 113, 113, ${backgroundAlpha.toFixed(3)})`,
+    borderColor: `rgba(220, 38, 38, ${borderAlpha.toFixed(3)})`,
+    color: "#7f1d1d",
+  };
+};
 
 const TIME_RANGE_TO_TEMPLATE_RANGE: Record<TimeRangeLabel, NeedTemplateTimeRange> = {
   "7-9": "7-9",
@@ -306,6 +326,23 @@ export default function Calendar({
       rows.forEach((row) => {
         row.byDay.set(day, 0);
       });
+    });
+
+    if (fallbackLabelSet.size > 0) {
+      for (let day = 1; day <= days; day += 1) {
+        const dayTypeKey = normalizedDayTypes[day - 1];
+        const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
+
+        fallbackLabelSet.forEach((label) => {
+          const row = rowByLabel.get(label);
+          if (!row) {
+            return;
+          }
+          const templateRange = TIME_RANGE_TO_TEMPLATE_RANGE[label];
+          const requirement = template ? template[templateRange] ?? 0 : 0;
+          row.byDay.set(day, requirement);
+        });
+      }
     }
 
     Object.entries(coverageBreakdown ?? {}).forEach(([dayKey, ranges]) => {
@@ -445,18 +482,58 @@ export default function Calendar({
       return a.label.localeCompare(b.label, "ja");
     });
 
-    const shortageList: ShortageInfo[] = [];
+    const daySummary = new Map<number, DayShortageSnapshot>();
+    const shortageList: DisplayShortageInfo[] = [];
     [...baseRows, ...additionalRows].forEach((row) => {
       row.byDay.forEach((value, day) => {
-        if (value > 0) {
-          shortageList.push({ day, time_range: row.label, shortage: value });
+        if (value <= 0) {
+          return;
         }
+
+        const needValue = isTimeRangeLabel(row.label)
+          ? requirementByLabel.get(row.label)?.get(day)
+          : undefined;
+        const actualValue = isTimeRangeLabel(row.label)
+          ? coverageByLabel.get(row.label)?.get(day)
+          : undefined;
+        const normalizedNeed = typeof needValue === "number" ? needValue : undefined;
+        const normalizedActual = typeof actualValue === "number" ? actualValue : undefined;
+        const ratio =
+          normalizedNeed && normalizedNeed > 0
+            ? Math.min(value / normalizedNeed, 2)
+            : Math.min(value, 2);
+
+        const previous = daySummary.get(day);
+        if (previous) {
+          const updated: DayShortageSnapshot = {
+            total: previous.total + value,
+            maxRatio: Math.max(previous.maxRatio, ratio),
+            dominantRange:
+              ratio >= previous.maxRatio ? row.label : previous.dominantRange,
+          };
+          daySummary.set(day, updated);
+        } else {
+          daySummary.set(day, {
+            total: value,
+            maxRatio: ratio,
+            dominantRange: row.label,
+          });
+        }
+
+        shortageList.push({
+          day,
+          time_range: row.label,
+          shortage: value,
+          need: normalizedNeed,
+          actual: normalizedActual,
+        });
       });
     });
 
     return {
       rows: [...baseRows, ...additionalRows],
       list: shortageList,
+      daySummary,
     };
   }, [
     coverageBreakdown,
@@ -467,14 +544,15 @@ export default function Calendar({
     shortages,
   ]);
 
-  const shortageRows = shortageComputation.rows;
+  const { rows: shortageRows, list: computedShortages, daySummary: dailyShortageSnapshot } =
+    shortageComputation;
 
   useEffect(() => {
     if (!onShortagesCalculated) {
       return;
     }
-    onShortagesCalculated(shortageComputation.list);
-  }, [onShortagesCalculated, shortageComputation.list]);
+    onShortagesCalculated(computedShortages);
+  }, [onShortagesCalculated, computedShortages]);
 
   const handleDayClick = useCallback(
     (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
@@ -612,20 +690,38 @@ export default function Calendar({
       </div>
       <table className="w-full border-collapse text-sm text-center">
         <thead>
-          <tr className="bg-gray-200">
+          <tr>
             <th className="p-2 border border-gray-300 sticky left-0 bg-gray-200 z-10">スタッフ</th>
             {Array.from({ length: days }, (_, i) => {
               const day = i + 1;
               const weekdayIndex = (firstDayOffset + i) % 7;
               const isWeekend = weekdayIndex >= 5;
+              const summary = dailyShortageSnapshot.get(day);
+              const highlightClass = summary && summary.total > 0 ? "bg-red-100" : "bg-gray-200";
+              const textColor = isWeekend ? "text-red-600" : "text-gray-800";
+              const badgeStyle = summary ? buildSeverityBadgeStyle(summary.maxRatio) : undefined;
+              const badgeTitle = summary
+                ? `${summary.dominantRange}帯で不足 ${summary.total}人`
+                : undefined;
+
               return (
                 <th
                   key={day}
-                  className={`p-2 border border-gray-300 ${isWeekend ? "text-red-500" : ""}`}
+                  className={`p-2 border border-gray-300 ${highlightClass} ${textColor}`}
                 >
-                  {day}
-                  <br />
-                  {WEEKDAYS[weekdayIndex]}
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-base font-semibold">{day}</span>
+                    <span className="text-xs font-medium">{WEEKDAYS[weekdayIndex]}</span>
+                    {summary && summary.total > 0 && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold"
+                        style={badgeStyle}
+                        title={badgeTitle}
+                      >
+                        不足 {summary.total}
+                      </span>
+                    )}
+                  </div>
                 </th>
               );
             })}

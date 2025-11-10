@@ -10,6 +10,7 @@ import {
   ScheduleResponse,
   Shift,
   ShiftPreferences,
+  DisplayShortageInfo,
   ShortageInfo,
   WishOffs,
 } from "../types";
@@ -72,7 +73,7 @@ export default function Home() {
   const [shiftPreferences, setShiftPreferences] = useState<ShiftPreferences>({});
   const [schedule, setSchedule] = useState<Schedule>({});
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
-  const [displayShortages, setDisplayShortages] = useState<ShortageInfo[]>([]);
+  const [displayShortages, setDisplayShortages] = useState<DisplayShortageInfo[]>([]);
   const [coverageBreakdown, setCoverageBreakdown] = useState<CoverageBreakdown>({});
   const [isLoading, setIsLoading] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Person | null>(null);
