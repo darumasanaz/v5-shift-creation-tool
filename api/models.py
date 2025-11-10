@@ -95,6 +95,12 @@ class ScheduleRequest(BaseModel):
     pairShiftConflicts: List[PairShiftConflict] = Field(default_factory=list)
 
 
+class CoverageInfo(BaseModel):
+    need: int
+    actual: int
+    shortage: int
+
+
 class ShortageInfo(BaseModel):
     day: int
     time_range: str
@@ -104,6 +110,6 @@ class ShortageInfo(BaseModel):
 class ScheduleResponse(BaseModel):
     schedule: Dict[str, List[Optional[str]]]
     shortages: List[ShortageInfo]
+    coverageBreakdown: Dict[int, Dict[str, CoverageInfo]] = Field(default_factory=dict)
     status: str
     message: Optional[str] = None
-
