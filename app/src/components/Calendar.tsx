@@ -2,6 +2,7 @@ import type { MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
 import {
+  CoverageBreakdown,
   NeedTemplate,
   NeedTemplateTimeRange,
   PaidLeaveRequests,
@@ -31,6 +32,7 @@ interface CalendarProps {
   shifts: Shift[];
   needTemplate: NeedTemplate;
   dayTypeByDate: string[];
+  coverageBreakdown: CoverageBreakdown;
   onShortagesCalculated?: (shortages: ShortageInfo[]) => void;
 }
 
@@ -135,6 +137,7 @@ export default function Calendar({
   shifts,
   needTemplate,
   dayTypeByDate,
+  coverageBreakdown,
   onShortagesCalculated,
 }: CalendarProps) {
   const normalizedWeekdayOfDay1 = useMemo(
@@ -155,6 +158,26 @@ export default function Calendar({
     });
     return map;
   }, [shifts]);
+
+  const coverageLabelsFromApi = useMemo(() => {
+    const labels = new Set<string>();
+    Object.values(coverageBreakdown ?? {}).forEach((ranges) => {
+      Object.keys(ranges ?? {}).forEach((label) => {
+        labels.add(label);
+      });
+    });
+    return labels;
+  }, [coverageBreakdown]);
+
+  const fallbackLabelSet = useMemo(() => {
+    const set = new Set<TimeRangeLabel>();
+    TIME_RANGE_ORDER.forEach((label) => {
+      if (!coverageLabelsFromApi.has(label)) {
+        set.add(label);
+      }
+    });
+    return set;
+  }, [coverageLabelsFromApi]);
 
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -181,86 +204,137 @@ export default function Calendar({
       });
     }
 
-    Object.values(schedule).forEach((assignments) => {
-      if (!assignments) {
+    Object.entries(coverageBreakdown ?? {}).forEach(([dayKey, ranges]) => {
+      const day = Number(dayKey);
+      if (!Number.isFinite(day) || day < 1 || day > days) {
         return;
       }
 
-      assignments.forEach((shiftCode, dayIndex) => {
-        if (!shiftCode || dayIndex >= days) {
+      Object.entries(ranges ?? {}).forEach(([label, info]) => {
+        const targetRow = rowByLabel.get(label);
+        if (!targetRow) {
           return;
         }
-
-        const labels = shiftCoverage.get(shiftCode);
-        if (!labels) {
-          return;
-        }
-
-        const shift = shiftByCode.get(shiftCode);
-        if (!shift) {
-          return;
-        }
-
-        const day = dayIndex + 1;
-        labels.forEach((label) => {
-          const targetRow = rowByLabel.get(label);
-          if (!targetRow) {
-            return;
-          }
-          const current = targetRow.byDay.get(day) ?? 0;
-          targetRow.byDay.set(day, current + 1);
-        });
-
-        if (shift.end > 24) {
-          const nextDay = day + 1;
-          if (nextDay <= days) {
-            const afterMidnightStart = Math.max(shift.start, 24) - 24;
-            const afterMidnightEnd = shift.end - 24;
-
-            TIME_RANGE_ORDER.forEach((label) => {
-              const [rangeStart, rangeEnd] = TIME_RANGE_INTERVALS[label];
-              if (rangeStart >= 24) {
-                return;
-              }
-              const normalizedStart = rangeStart >= 24 ? rangeStart - 24 : rangeStart;
-              const normalizedEnd = rangeEnd > 24 ? rangeEnd - 24 : rangeEnd;
-
-              if (
-                afterMidnightStart < normalizedEnd &&
-                afterMidnightEnd > normalizedStart
-              ) {
-                const nextDayRow = rowByLabel.get(label);
-                if (!nextDayRow) {
-                  return;
-                }
-                const current = nextDayRow.byDay.get(nextDay) ?? 0;
-                nextDayRow.byDay.set(nextDay, current + 1);
-              }
-            });
-          }
-        }
+        targetRow.byDay.set(day, info.actual);
       });
     });
 
-    return rows;
-  }, [days, schedule, shiftByCode, shiftCoverage]);
+    if (fallbackLabelSet.size > 0) {
+      Object.values(schedule).forEach((assignments) => {
+        if (!assignments) {
+          return;
+        }
 
-  const requirementRows = useMemo(() => {
-    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
+        assignments.forEach((shiftCode, dayIndex) => {
+          if (!shiftCode || dayIndex >= days) {
+            return;
+          }
 
-    for (let day = 1; day <= days; day += 1) {
-      const dayTypeKey = normalizedDayTypes[day - 1];
-      const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
+          const labels = shiftCoverage.get(shiftCode);
+          if (!labels) {
+            return;
+          }
 
-      rows.forEach((row) => {
-        const templateRange = TIME_RANGE_TO_TEMPLATE_RANGE[row.label];
-        const requirement = template ? template[templateRange] ?? 0 : 0;
-        row.byDay.set(day, requirement);
+          const shift = shiftByCode.get(shiftCode);
+          if (!shift) {
+            return;
+          }
+
+          const day = dayIndex + 1;
+          labels.forEach((label) => {
+            if (!fallbackLabelSet.has(label)) {
+              return;
+            }
+            const targetRow = rowByLabel.get(label);
+            if (!targetRow) {
+              return;
+            }
+            const current = targetRow.byDay.get(day) ?? 0;
+            targetRow.byDay.set(day, current + 1);
+          });
+
+          if (shift.end > 24) {
+            const nextDay = day + 1;
+            if (nextDay <= days) {
+              const afterMidnightStart = Math.max(shift.start, 24) - 24;
+              const afterMidnightEnd = shift.end - 24;
+
+              TIME_RANGE_ORDER.forEach((label) => {
+                if (!fallbackLabelSet.has(label)) {
+                  return;
+                }
+                const [rangeStart, rangeEnd] = TIME_RANGE_INTERVALS[label];
+                if (rangeStart >= 24) {
+                  return;
+                }
+                const normalizedStart = rangeStart >= 24 ? rangeStart - 24 : rangeStart;
+                const normalizedEnd = rangeEnd > 24 ? rangeEnd - 24 : rangeEnd;
+
+                if (
+                  afterMidnightStart < normalizedEnd &&
+                  afterMidnightEnd > normalizedStart
+                ) {
+                  const nextDayRow = rowByLabel.get(label);
+                  if (!nextDayRow) {
+                    return;
+                  }
+                  const current = nextDayRow.byDay.get(nextDay) ?? 0;
+                  nextDayRow.byDay.set(nextDay, current + 1);
+                }
+              });
+            }
+          }
+        });
       });
     }
 
     return rows;
-  }, [days, needTemplate, normalizedDayTypes]);
+  }, [coverageBreakdown, days, fallbackLabelSet, schedule, shiftByCode, shiftCoverage]);
+
+  const requirementRows = useMemo(() => {
+    const rows = TIME_RANGE_ORDER.map((label) => ({ label, byDay: new Map<number, number>() }));
+    const rowByLabel = new Map(rows.map((row) => [row.label, row]));
+
+    for (let day = 1; day <= days; day += 1) {
+      rows.forEach((row) => {
+        row.byDay.set(day, 0);
+      });
+    }
+
+    Object.entries(coverageBreakdown ?? {}).forEach(([dayKey, ranges]) => {
+      const day = Number(dayKey);
+      if (!Number.isFinite(day) || day < 1 || day > days) {
+        return;
+      }
+
+      Object.entries(ranges ?? {}).forEach(([label, info]) => {
+        const targetRow = rowByLabel.get(label);
+        if (!targetRow) {
+          return;
+        }
+        targetRow.byDay.set(day, info.need);
+      });
+    });
+
+    if (fallbackLabelSet.size > 0) {
+      for (let day = 1; day <= days; day += 1) {
+        const dayTypeKey = normalizedDayTypes[day - 1];
+        const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
+
+        fallbackLabelSet.forEach((label) => {
+          const row = rowByLabel.get(label);
+          if (!row) {
+            return;
+          }
+          const templateRange = TIME_RANGE_TO_TEMPLATE_RANGE[label];
+          const requirement = template ? template[templateRange] ?? 0 : 0;
+          row.byDay.set(day, requirement);
+        });
+      }
+    }
+
+    return rows;
+  }, [coverageBreakdown, days, fallbackLabelSet, needTemplate, normalizedDayTypes]);
 
   const coverageByLabel = useMemo(() => {
     return new Map(coverageRows.map((row) => [row.label, row.byDay]));
@@ -282,13 +356,49 @@ export default function Calendar({
     const additionalRowByLabel = new Map<string, ShortageRow>();
 
     for (let day = 1; day <= days; day += 1) {
-      TIME_RANGE_ORDER.forEach((label) => {
+      baseRows.forEach((row) => {
+        row.byDay.set(day, 0);
+      });
+    }
+
+    Object.entries(coverageBreakdown ?? {}).forEach(([dayKey, ranges]) => {
+      const day = Number(dayKey);
+      if (!Number.isFinite(day) || day < 1 || day > days) {
+        return;
+      }
+
+      Object.entries(ranges ?? {}).forEach(([label, info]) => {
+        const baseRow = baseRowByLabel.get(label);
+        if (baseRow) {
+          baseRow.byDay.set(day, info.shortage);
+          return;
+        }
+
+        let targetRow = additionalRowByLabel.get(label);
+        if (!targetRow) {
+          targetRow = { label, byDay: new Map<number, number>() };
+          for (let d = 1; d <= days; d += 1) {
+            targetRow.byDay.set(d, 0);
+          }
+          additionalRows.push(targetRow);
+          additionalRowByLabel.set(label, targetRow);
+        }
+        targetRow.byDay.set(day, info.shortage);
+      });
+    });
+
+    fallbackLabelSet.forEach((label) => {
+      const row = baseRowByLabel.get(label);
+      if (!row) {
+        return;
+      }
+      for (let day = 1; day <= days; day += 1) {
         const requirement = requirementByLabel.get(label)?.get(day) ?? 0;
         const coverage = coverageByLabel.get(label)?.get(day) ?? 0;
         const shortageValue = Math.max(requirement - coverage, 0);
-        baseRowByLabel.get(label)!.byDay.set(day, shortageValue);
-      });
-    }
+        row.byDay.set(day, shortageValue);
+      }
+    });
 
     shortages.forEach((info) => {
       if (info.day < 1 || info.day > days) {
@@ -337,7 +447,14 @@ export default function Calendar({
       rows: [...baseRows, ...additionalRows],
       list: shortageList,
     };
-  }, [coverageByLabel, days, requirementByLabel, shortages]);
+  }, [
+    coverageBreakdown,
+    coverageByLabel,
+    days,
+    fallbackLabelSet,
+    requirementByLabel,
+    shortages,
+  ]);
 
   const shortageRows = shortageComputation.rows;
 
