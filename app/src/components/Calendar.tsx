@@ -326,6 +326,23 @@ export default function Calendar({
       rows.forEach((row) => {
         row.byDay.set(day, 0);
       });
+    });
+
+    if (fallbackLabelSet.size > 0) {
+      for (let day = 1; day <= days; day += 1) {
+        const dayTypeKey = normalizedDayTypes[day - 1];
+        const template = dayTypeKey ? needTemplate[dayTypeKey] : undefined;
+
+        fallbackLabelSet.forEach((label) => {
+          const row = rowByLabel.get(label);
+          if (!row) {
+            return;
+          }
+          const templateRange = TIME_RANGE_TO_TEMPLATE_RANGE[label];
+          const requirement = template ? template[templateRange] ?? 0 : 0;
+          row.byDay.set(day, requirement);
+        });
+      }
     }
 
     Object.entries(coverageBreakdown ?? {}).forEach(([dayKey, ranges]) => {
