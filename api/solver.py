@@ -283,13 +283,17 @@ def solve_shift_scheduling(request: ScheduleRequest):
         consec_max = people[p].consecMax
         if consec_max <= 0:
             continue
+        paid_leave_days = paid_leave_days_by_index.get(p, set())
         for d in range(num_days - consec_max):
             window = sum(
                 work[p, day, s_code]
                 for day in range(d, d + consec_max + 1)
                 for s_code in all_shift_codes
             )
-            model.Add(window <= consec_max)
+            paid_leave_in_window = sum(
+                1 for day in range(d, d + consec_max + 1) if day in paid_leave_days
+            )
+            model.Add(window + paid_leave_in_window <= consec_max)
     
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
