@@ -167,7 +167,6 @@ export default function Home() {
     setStatusMessage(null);
     setSchedule({});
     setShortages([]);
-    setDisplayShortages([]);
     setCoverageBreakdown({});
     try {
       const res = await fetch("/api/generate-schedule", {
