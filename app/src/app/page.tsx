@@ -10,7 +10,6 @@ import {
   ScheduleResponse,
   Shift,
   ShiftPreferences,
-  DisplayShortageInfo,
   ShortageInfo,
   WishOffs,
 } from "../types";
@@ -19,7 +18,6 @@ import Calendar from "../components/Calendar";
 import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
-import ShortageSummary from "../components/ShortageSummary";
 import PreviousNightCarryEditor from "../components/PreviousNightCarryEditor";
 
 const getNightShiftCodes = (shifts: Shift[]): string[] =>
@@ -73,7 +71,6 @@ export default function Home() {
   const [shiftPreferences, setShiftPreferences] = useState<ShiftPreferences>({});
   const [schedule, setSchedule] = useState<Schedule>({});
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
-  const [displayShortages, setDisplayShortages] = useState<DisplayShortageInfo[]>([]);
   const [coverageBreakdown, setCoverageBreakdown] = useState<CoverageBreakdown>({});
   const [isLoading, setIsLoading] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<Person | null>(null);
@@ -170,7 +167,6 @@ export default function Home() {
     setStatusMessage(null);
     setSchedule({});
     setShortages([]);
-    setDisplayShortages([]);
     setCoverageBreakdown({});
     try {
       const res = await fetch("/api/generate-schedule", {
@@ -333,14 +329,6 @@ export default function Home() {
               needTemplate={initialData.needTemplate}
               dayTypeByDate={initialData.dayTypeByDate}
               coverageBreakdown={coverageBreakdown}
-              onShortagesCalculated={setDisplayShortages}
-            />
-          </div>
-          <div className="flex-shrink-0">
-            <ShortageSummary
-              days={initialData.days}
-              weekdayOfDay1={initialData.weekdayOfDay1}
-              shortages={displayShortages}
             />
           </div>
         </div>
