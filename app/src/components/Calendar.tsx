@@ -1,6 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
+import { ShiftLabelMode, toDisplayShiftLabel } from "../utils/shiftLabels";
 import {
   CoverageBreakdown,
   NeedTemplate,
@@ -35,6 +36,7 @@ interface CalendarProps {
   dayTypeByDate: string[];
   coverageBreakdown: CoverageBreakdown;
   onShortagesCalculated?: (shortages: DisplayShortageInfo[]) => void;
+  shiftLabelMode: ShiftLabelMode;
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -162,6 +164,7 @@ export default function Calendar({
   dayTypeByDate,
   coverageBreakdown,
   onShortagesCalculated,
+  shiftLabelMode,
 }: CalendarProps) {
   const normalizedWeekdayOfDay1 = useMemo(
     () => normalizeWeekdayIndex(weekdayOfDay1),
@@ -778,7 +781,9 @@ export default function Calendar({
                       <span className="text-red-500 font-bold">休</span>
                     )}
                     {!showPaidLeave && !isWishedOff && shift && (
-                      <span className="font-bold text-blue-700">{shift}</span>
+                      <span className="font-bold text-blue-700">
+                        {toDisplayShiftLabel(shift, shiftLabelMode)}
+                      </span>
                     )}
                     {!showPaidLeave && !isWishedOff && !shift && (
                       <span className="text-gray-300">-</span>
@@ -786,7 +791,7 @@ export default function Calendar({
                     {preferredShiftCode && !isWishedOff && !showPaidLeave && (
                       <span className="absolute bottom-1 right-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200 shadow-sm">
                         希望:
-                        {preferredShift?.name ?? preferredShiftCode}
+                        {preferredShift?.name ?? toDisplayShiftLabel(preferredShiftCode, shiftLabelMode)}
                       </span>
                     )}
                   </td>

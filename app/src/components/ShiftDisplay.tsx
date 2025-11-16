@@ -1,11 +1,17 @@
 import { Person, Schedule } from "../types";
+import { ShiftLabelMode, toDisplayShiftLabel } from "../utils/shiftLabels";
 
 interface ShiftDisplayProps {
   selectedStaff: Person | null;
   schedule: Schedule;
+  shiftLabelMode: ShiftLabelMode;
 }
 
-export default function ShiftDisplay({ selectedStaff, schedule }: ShiftDisplayProps) {
+export default function ShiftDisplay({
+  selectedStaff,
+  schedule,
+  shiftLabelMode,
+}: ShiftDisplayProps) {
   if (!selectedStaff) {
     return (
       <div className="bg-white p-4 rounded-lg shadow">
@@ -28,7 +34,7 @@ export default function ShiftDisplay({ selectedStaff, schedule }: ShiftDisplayPr
             <li key={`${selectedStaff.id}-${index}`} className="flex items-center justify-between p-2 border rounded">
               <span>{index + 1}日</span>
               <span className={shift ? "font-semibold text-blue-700" : "text-gray-400"}>
-                {shift ?? "-"}
+                {shift ? toDisplayShiftLabel(shift, shiftLabelMode) : "-"}
               </span>
             </li>
           ))}

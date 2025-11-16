@@ -19,6 +19,7 @@ import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
 import ShiftDisplay from "../components/ShiftDisplay";
 import PreviousNightCarryEditor from "../components/PreviousNightCarryEditor";
+import { ShiftLabelMode } from "../utils/shiftLabels";
 
 const getNightShiftCodes = (shifts: Shift[]): string[] =>
   shifts.filter((shift) => shift.end > 24).map((shift) => shift.code);
@@ -78,6 +79,7 @@ export default function Home() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
   const [previousMonthNightCarry, setPreviousMonthNightCarry] = useState<Record<string, string[]>>({});
+  const [shiftLabelMode, setShiftLabelMode] = useState<ShiftLabelMode>("alphabet");
 
   useEffect(() => {
     return () => {
@@ -275,7 +277,15 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-gray-800">Shift Scheduler v5</h1>
           {statusMessage && <p className="text-sm text-gray-500 mt-1">状態: {statusMessage}</p>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button
+            onClick={() =>
+              setShiftLabelMode((prev) => (prev === "alphabet" ? "japanese" : "alphabet"))
+            }
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
+          >
+            {shiftLabelMode === "alphabet" ? "日本語表記で表示" : "アルファベット表記で表示"}
+          </button>
           <button
             onClick={handleExportSchedule}
             className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
@@ -300,7 +310,11 @@ export default function Home() {
             onSelectStaff={setSelectedStaff}
             onEditStaff={setEditingStaff}
           />
-          <ShiftDisplay selectedStaff={selectedStaff} schedule={schedule} />
+          <ShiftDisplay
+            selectedStaff={selectedStaff}
+            schedule={schedule}
+            shiftLabelMode={shiftLabelMode}
+          />
           <PreviousNightCarryEditor
             shifts={initialData.shifts}
             people={people}
@@ -328,8 +342,9 @@ export default function Home() {
               shifts={initialData.shifts}
               needTemplate={initialData.needTemplate}
               dayTypeByDate={initialData.dayTypeByDate}
-              coverageBreakdown={coverageBreakdown}
-            />
+            coverageBreakdown={coverageBreakdown}
+            shiftLabelMode={shiftLabelMode}
+          />
           </div>
         </div>
       </main>
