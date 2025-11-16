@@ -57,6 +57,7 @@ class PairShiftConflict(BaseModel):
 class Rules(BaseModel):
     noEarlyAfterDayAB: bool
     nightRest: NightRest
+    nightRecoveryCounts: Dict[str, int] = Field(default_factory=dict)
     pairShiftConflicts: List[PairShiftConflict] = Field(default_factory=list)
 
 
