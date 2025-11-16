@@ -117,6 +117,15 @@ def solve_shift_scheduling(request: ScheduleRequest):
     all_shift_codes = list(shifts.keys())
     time_ranges, carry_over_ranges = _build_time_ranges(shifts)
     night_rest: Dict[str, int] = data["rules"]["nightRest"]
+    raw_night_recovery_counts: Dict[str, int] = data["rules"].get(
+        "nightRecoveryCounts", {}
+    )
+    recovery_code_set = set(night_rest.keys()) | set(raw_night_recovery_counts.keys())
+    night_recovery_counts: Dict[str, int] = {}
+    for code in recovery_code_set:
+        rest_value = int(night_rest.get(code, 0))
+        recovery_value = int(raw_night_recovery_counts.get(code, rest_value))
+        night_recovery_counts[code] = max(0, min(recovery_value, rest_value))
 
     raw_previous_carry = (
         request.previousMonthNightCarry
@@ -149,16 +158,18 @@ def solve_shift_scheduling(request: ScheduleRequest):
     initial_recovery_windows: Dict[int, int] = {}
     for night_code, carried_people in previous_month_carry.items():
         rest_days = night_rest.get(night_code, 0)
+        recovery_days = night_recovery_counts.get(night_code, rest_days)
         for person_id in carried_people:
             person_idx = person_indices.get(person_id)
             if person_idx is None:
                 continue
-            initial_recovery_people.add(person_idx)
-            if rest_days <= 0:
+            if recovery_days > 0:
+                initial_recovery_people.add(person_idx)
+            if recovery_days <= 0:
                 continue
             previous = initial_recovery_windows.get(person_idx, 0)
-            if rest_days > previous:
-                initial_recovery_windows[person_idx] = rest_days
+            if recovery_days > previous:
+                initial_recovery_windows[person_idx] = recovery_days
     previous_carry_counts: Dict[str, int] = {label: 0 for label in time_ranges}
     for label, carry_shifts in carry_over_ranges.items():
         previous_carry_counts[label] = sum(
@@ -188,8 +199,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
             model.Add(night_recovery[p, 0] == 1).OnlyEnforceIf(literal)
             model.Add(night_recovery[p, 0] == 0).OnlyEnforceIf(literal.Not())
 
-    for person_idx, rest_days in initial_recovery_windows.items():
-        for day in range(1, min(num_days, rest_days)):
+    for person_idx, recovery_days in initial_recovery_windows.items():
+        for day in range(1, min(num_days, recovery_days)):
             model.Add(night_recovery[person_idx, day] == 1)
 
     # Hard constraints -----------------------------------------------------
@@ -318,14 +329,14 @@ def solve_shift_scheduling(request: ScheduleRequest):
     for p in range(num_people):
         can_work = set(people[p].canWork)
         relevant_night_codes = [
-            (code, night_rest[code])
+            (code, night_recovery_counts.get(code, 0))
             for code in night_shift_codes
-            if code in can_work
+            if code in can_work and night_recovery_counts.get(code, 0) > 0
         ]
         for d in range(1, num_days):
             recovery_sources: List[cp_model.IntVar] = []
-            for night_code, rest_days in relevant_night_codes:
-                for offset in range(1, rest_days + 1):
+            for night_code, recovery_window in relevant_night_codes:
+                for offset in range(1, recovery_window + 1):
                     prev_day = d - offset
                     if prev_day < 0:
                         break
@@ -335,8 +346,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 for literal in recovery_sources:
                     model.AddImplication(literal, night_recovery[p, d])
             else:
-                max_initial_rest = initial_recovery_windows.get(p, 0)
-                if d >= max_initial_rest:
+                max_initial_recovery = initial_recovery_windows.get(p, 0)
+                if d >= max_initial_recovery:
                     model.Add(night_recovery[p, d] == 0)
 
     for night_code, carried_people in previous_month_carry.items():

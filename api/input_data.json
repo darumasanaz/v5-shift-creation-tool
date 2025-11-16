@@ -337,6 +337,11 @@
       "NB": 1,
       "NC": 1
     },
+    "nightRecoveryCounts": {
+      "NA": 1,
+      "NB": 0,
+      "NC": 0
+    },
     "pairShiftConflicts": [
       {
         "people": ["柴田", "森川孝"],
