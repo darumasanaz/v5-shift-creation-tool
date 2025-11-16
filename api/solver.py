@@ -144,6 +144,12 @@ def solve_shift_scheduling(request: ScheduleRequest):
             deduped.append(person_id)
         if deduped:
             previous_month_carry[s_code] = deduped
+    initial_recovery_people: Set[int] = set()
+    for carried_people in previous_month_carry.values():
+        for person_id in carried_people:
+            person_idx = person_indices.get(person_id)
+            if person_idx is not None:
+                initial_recovery_people.add(person_idx)
     previous_carry_counts: Dict[str, int] = {label: 0 for label in time_ranges}
     for label, carry_shifts in carry_over_ranges.items():
         previous_carry_counts[label] = sum(
@@ -157,6 +163,21 @@ def solve_shift_scheduling(request: ScheduleRequest):
         for d in range(num_days):
             for s_code in all_shift_codes:
                 work[p, d, s_code] = model.NewBoolVar(f"work_{p}_{d}_{s_code}")
+
+    night_recovery = {}
+    for p in range(num_people):
+        for d in range(num_days):
+            night_recovery[p, d] = model.NewBoolVar(f"night_recovery_{p}_{d}")
+
+    if num_days > 0:
+        for p in range(num_people):
+            literal = model.NewBoolVar(f"initial_night_recovery_{p}")
+            if p in initial_recovery_people:
+                model.Add(literal == 1)
+            else:
+                model.Add(literal == 0)
+            model.Add(night_recovery[p, 0] == 1).OnlyEnforceIf(literal)
+            model.Add(night_recovery[p, 0] == 0).OnlyEnforceIf(literal.Not())
 
     # Hard constraints -----------------------------------------------------
     def _to_dict(obj):
@@ -262,15 +283,32 @@ def solve_shift_scheduling(request: ScheduleRequest):
 
     # Monthly minimum/maximum assignments
     for p in range(num_people):
-        total_days = sum(
+        assigned_days = sum(
             work[p, d, s_code] for d in range(num_days) for s_code in all_shift_codes
         )
+        recovery_days = sum(night_recovery[p, d] for d in range(num_days))
         paid_leave_count = len(paid_leave_days_by_index.get(p, set()))
-        model.Add(total_days + paid_leave_count >= people[p].monthlyMin)
-        model.Add(total_days + paid_leave_count <= people[p].monthlyMax)
+        model.Add(
+            assigned_days + recovery_days + paid_leave_count >= people[p].monthlyMin
+        )
+        # The existing monthlyMax values in the data describe the number of actual
+        # shift assignments (plus paid leave), so we keep that limit on the real
+        # assignments while still treating recovery days as worked days in the
+        # counts reported to the user.
+        model.Add(assigned_days + paid_leave_count <= people[p].monthlyMax)
 
     # Night shift rest enforcement
     night_rest: Dict[str, int] = data["rules"]["nightRest"]
+    night_shift_codes = [
+        code for code in night_rest.keys() if code in all_shift_codes
+    ]
+
+    for p in range(num_people):
+        for d in range(num_days - 1):
+            night_assignments = sum(
+                work[p, d, night_code] for night_code in night_shift_codes
+            )
+            model.Add(night_recovery[p, d + 1] == night_assignments)
 
     for night_code, carried_people in previous_month_carry.items():
         rest_days = night_rest.get(night_code, 0)
@@ -309,10 +347,13 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 for day in range(d, d + consec_max + 1)
                 for s_code in all_shift_codes
             )
+            window_recovery = sum(
+                night_recovery[p, day] for day in range(d, d + consec_max + 1)
+            )
             paid_leave_in_window = sum(
                 1 for day in range(d, d + consec_max + 1) if day in paid_leave_days
             )
-            model.Add(window + paid_leave_in_window <= consec_max)
+            model.Add(window + window_recovery + paid_leave_in_window <= consec_max)
 
     # Fixed off weekdays and requested days off
     weekday_map = {0: "月", 1: "火", 2: "水", 3: "木", 4: "金", 5: "土", 6: "日"}
@@ -425,6 +466,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
             assignments: List[Optional[str]] = []
             paid_leave_days = paid_leave_days_by_index.get(p_idx, set())
             for d in range(num_days):
+                if solver.Value(night_recovery[p_idx, d]):
+                    assignments.append("明")
+                    continue
                 if d in paid_leave_days:
                     assignments.append("有給")
                     continue
