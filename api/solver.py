@@ -116,6 +116,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
     shifts = {s["code"]: s for s in data["shifts"]}
     all_shift_codes = list(shifts.keys())
     time_ranges, carry_over_ranges = _build_time_ranges(shifts)
+    night_rest: Dict[str, int] = data["rules"]["nightRest"]
 
     raw_previous_carry = (
         request.previousMonthNightCarry
@@ -145,11 +146,19 @@ def solve_shift_scheduling(request: ScheduleRequest):
         if deduped:
             previous_month_carry[s_code] = deduped
     initial_recovery_people: Set[int] = set()
-    for carried_people in previous_month_carry.values():
+    initial_recovery_windows: Dict[int, int] = {}
+    for night_code, carried_people in previous_month_carry.items():
+        rest_days = night_rest.get(night_code, 0)
         for person_id in carried_people:
             person_idx = person_indices.get(person_id)
-            if person_idx is not None:
-                initial_recovery_people.add(person_idx)
+            if person_idx is None:
+                continue
+            initial_recovery_people.add(person_idx)
+            if rest_days <= 0:
+                continue
+            previous = initial_recovery_windows.get(person_idx, 0)
+            if rest_days > previous:
+                initial_recovery_windows[person_idx] = rest_days
     previous_carry_counts: Dict[str, int] = {label: 0 for label in time_ranges}
     for label, carry_shifts in carry_over_ranges.items():
         previous_carry_counts[label] = sum(
@@ -178,6 +187,10 @@ def solve_shift_scheduling(request: ScheduleRequest):
                 model.Add(literal == 0)
             model.Add(night_recovery[p, 0] == 1).OnlyEnforceIf(literal)
             model.Add(night_recovery[p, 0] == 0).OnlyEnforceIf(literal.Not())
+
+    for person_idx, rest_days in initial_recovery_windows.items():
+        for day in range(1, min(num_days, rest_days)):
+            model.Add(night_recovery[person_idx, day] == 1)
 
     # Hard constraints -----------------------------------------------------
     def _to_dict(obj):
@@ -298,17 +311,33 @@ def solve_shift_scheduling(request: ScheduleRequest):
         model.Add(assigned_days + paid_leave_count <= people[p].monthlyMax)
 
     # Night shift rest enforcement
-    night_rest: Dict[str, int] = data["rules"]["nightRest"]
     night_shift_codes = [
         code for code in night_rest.keys() if code in all_shift_codes
     ]
 
     for p in range(num_people):
-        for d in range(num_days - 1):
-            night_assignments = sum(
-                work[p, d, night_code] for night_code in night_shift_codes
-            )
-            model.Add(night_recovery[p, d + 1] == night_assignments)
+        can_work = set(people[p].canWork)
+        relevant_night_codes = [
+            (code, night_rest[code])
+            for code in night_shift_codes
+            if code in can_work
+        ]
+        for d in range(1, num_days):
+            recovery_sources: List[cp_model.IntVar] = []
+            for night_code, rest_days in relevant_night_codes:
+                for offset in range(1, rest_days + 1):
+                    prev_day = d - offset
+                    if prev_day < 0:
+                        break
+                    recovery_sources.append(work[p, prev_day, night_code])
+            if recovery_sources:
+                model.Add(night_recovery[p, d] <= sum(recovery_sources))
+                for literal in recovery_sources:
+                    model.AddImplication(literal, night_recovery[p, d])
+            else:
+                max_initial_rest = initial_recovery_windows.get(p, 0)
+                if d >= max_initial_rest:
+                    model.Add(night_recovery[p, d] == 0)
 
     for night_code, carried_people in previous_month_carry.items():
         rest_days = night_rest.get(night_code, 0)
