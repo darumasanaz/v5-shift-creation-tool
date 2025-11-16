@@ -1,5 +1,6 @@
 import { Person, Schedule } from "../types";
 import { ShiftLabelMode, toDisplayShiftLabel } from "../utils/shiftLabels";
+import { getShiftTextColorClass } from "../utils/shiftColors";
 
 interface ShiftDisplayProps {
   selectedStaff: Person | null;
@@ -30,14 +31,19 @@ export default function ShiftDisplay({
         <p className="text-sm text-gray-500">まだシフトが作成されていません。</p>
       ) : (
         <ul className="grid grid-cols-2 gap-2 text-sm text-gray-700 max-h-60 overflow-y-auto">
-          {assignments.map((shift, index) => (
-            <li key={`${selectedStaff.id}-${index}`} className="flex items-center justify-between p-2 border rounded">
-              <span>{index + 1}日</span>
-              <span className={shift ? "font-semibold text-blue-700" : "text-gray-400"}>
-                {shift ? toDisplayShiftLabel(shift, shiftLabelMode) : "-"}
-              </span>
-            </li>
-          ))}
+          {assignments.map((shift, index) => {
+            const textClass = shift
+              ? `font-semibold ${getShiftTextColorClass(shift)}`
+              : "text-gray-400";
+            return (
+              <li key={`${selectedStaff.id}-${index}`} className="flex items-center justify-between p-2 border rounded">
+                <span>{index + 1}日</span>
+                <span className={textClass}>
+                  {shift ? toDisplayShiftLabel(shift, shiftLabelMode) : "-"}
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>
