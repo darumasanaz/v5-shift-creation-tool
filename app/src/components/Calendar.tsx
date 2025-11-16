@@ -2,6 +2,7 @@ import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
 import { ShiftLabelMode, toDisplayShiftLabel } from "../utils/shiftLabels";
+import { getShiftTextColorClass } from "../utils/shiftColors";
 import {
   CoverageBreakdown,
   NeedTemplate,
@@ -756,6 +757,7 @@ export default function Calendar({
                 const isPaidLeaveScheduled = assignedValue === "有給";
                 const showPaidLeave = isPaidLeaveRequested || isPaidLeaveScheduled;
                 const shift = showPaidLeave ? null : assignedValue;
+                const shiftColorClass = getShiftTextColorClass(shift);
                 const isSelected = selectedStaff?.id === person.id;
                 const preferredShiftCode = shiftPreferences[person.id]?.[dayIndex] ?? null;
                 const preferredShift = preferredShiftCode ? shiftByCode.get(preferredShiftCode) : null;
@@ -781,7 +783,7 @@ export default function Calendar({
                       <span className="text-red-500 font-bold">休</span>
                     )}
                     {!showPaidLeave && !isWishedOff && shift && (
-                      <span className="font-bold text-blue-700">
+                      <span className={`font-bold ${shiftColorClass}`}>
                         {toDisplayShiftLabel(shift, shiftLabelMode)}
                       </span>
                     )}
