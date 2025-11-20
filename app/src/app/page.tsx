@@ -426,6 +426,7 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             schedule,
+            people,
             baseVersion: scheduleVersion ?? undefined,
           }),
         },

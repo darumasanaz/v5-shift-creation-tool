@@ -65,7 +65,7 @@ def generate_schedule(request: ScheduleRequest):
 def save_draft(request: ScheduleSaveRequest):
     current_state = load_schedule_state()
     enforce_version_and_lock(request, current_state)
-    people, shifts, days, weekday_of_day1 = load_validation_context()
+    people, shifts, days, weekday_of_day1 = load_validation_context(request.people)
     validate_schedule_rules(
         request.schedule, people, shifts, days, weekday_of_day1
     )
@@ -84,7 +84,7 @@ def save_draft(request: ScheduleSaveRequest):
 def finalize_schedule(request: ScheduleSaveRequest):
     current_state = load_schedule_state()
     enforce_version_and_lock(request, current_state)
-    people, shifts, days, weekday_of_day1 = load_validation_context()
+    people, shifts, days, weekday_of_day1 = load_validation_context(request.people)
     validate_schedule_rules(
         request.schedule, people, shifts, days, weekday_of_day1
     )

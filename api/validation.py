@@ -13,9 +13,13 @@ def _shift_duration(shift: Optional[Shift]) -> int:
     return shift.end - shift.start
 
 
-def load_validation_context() -> tuple[list[Person], list[Shift], int, int]:
+def load_validation_context(
+    people_override: Optional[Iterable[Person]] = None,
+) -> tuple[list[Person], list[Shift], int, int]:
     payload = load_input_data()
-    people = [Person(**person) for person in payload.get("people", [])]
+    people = list(people_override) if people_override is not None else [
+        Person(**person) for person in payload.get("people", [])
+    ]
     shifts = [Shift(**shift) for shift in payload.get("shifts", [])]
     days = payload.get("days", 0)
     weekday_of_day1 = payload.get("weekdayOfDay1", 0)
