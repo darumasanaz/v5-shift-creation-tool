@@ -410,10 +410,12 @@ def solve_shift_scheduling(request: ScheduleRequest):
             if 0 <= d < num_days:
                 for s_code in all_shift_codes:
                     model.Add(work[p, d, s_code] == 0)
+                model.Add(night_recovery[p, d] == 0)
         paid_leave_days = paid_leave_days_by_index.get(p, set())
         for d in paid_leave_days:
             for s_code in all_shift_codes:
                 model.Add(work[p, d, s_code] == 0)
+            model.Add(night_recovery[p, d] == 0)
 
     # Soft constraints -----------------------------------------------------
     penalties: List[cp_model.LinearExpr] = []
@@ -424,6 +426,7 @@ def solve_shift_scheduling(request: ScheduleRequest):
     shortage_time_range_weights: Dict[str, int] = weights.get(
         "shortageTimeRangeWeights", {}
     )
+    preference_weight = int(weights.get("W_requested_off_violation", 0))
 
     for d in range(num_days):
         day_type = data["dayTypeByDate"][d]
@@ -458,6 +461,25 @@ def solve_shift_scheduling(request: ScheduleRequest):
             penalties.append(shortage * shortage_weight)
             penalties.append(overstaff * weights["W_overstaff_gt_need_plus1"])
             shortage_vars[(d, label)] = shortage
+
+    shift_preferences = request.shiftPreferences or {}
+    if preference_weight > 0:
+        for p_idx, person in enumerate(people):
+            prefs = shift_preferences.get(person.id, {}) or {}
+            if not isinstance(prefs, dict):
+                continue
+            allowed_shifts = set(person.canWork)
+            for day, shift_code in prefs.items():
+                if not isinstance(day, int) or day < 0 or day >= num_days:
+                    continue
+                if shift_code not in all_shift_codes or shift_code not in allowed_shifts:
+                    continue
+                preferred_assignment = work[p_idx, day, shift_code]
+                unmet = model.NewBoolVar(
+                    f"shift_preference_unmet_{p_idx}_{day}_{shift_code}"
+                )
+                model.Add(unmet + preferred_assignment == 1)
+                penalties.append(unmet * preference_weight)
 
     strict_night: Dict[str, int] = data.get("strictNight", {})
     if strict_night:
