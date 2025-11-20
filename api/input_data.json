@@ -185,20 +185,33 @@
       "consecMax": 2
     },
     {
-      "id": "申",
+      "id": "小澤",
       "canWork": [
-        "EA"
+        "DB"
+      ],
+      "fixedOffWeekdays": [],
+      "weeklyMin": 0,
+      "weeklyMax": 2,
+      "monthlyMin": 5,
+      "monthlyMax": 5,
+      "consecMax": 2
+    },
+    {
+      "id": "片岡",
+      "canWork": [
+        "LA"
       ],
       "fixedOffWeekdays": [
+        "火",
         "水",
-        "木",
         "金",
+        "土",
         "日"
       ],
       "weeklyMin": 0,
-      "weeklyMax": 3,
-      "monthlyMin": 10,
-      "monthlyMax": 10,
+      "weeklyMax": 2,
+      "monthlyMin": 8,
+      "monthlyMax": 9,
       "consecMax": 3
     },
     {
@@ -278,13 +291,14 @@
         "火",
         "水",
         "金",
+        "土",
         "日"
       ],
-      "weeklyMin": 2,
-      "weeklyMax": 5,
-      "monthlyMin": 12,
-      "monthlyMax": 14,
-      "consecMax": 4
+      "weeklyMin": 0,
+      "weeklyMax": 2,
+      "monthlyMin": 8,
+      "monthlyMax": 9,
+      "consecMax": 2
     },
     {
       "id": "天野",
