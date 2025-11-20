@@ -80,6 +80,45 @@ export default function Home() {
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
   const [previousMonthNightCarry, setPreviousMonthNightCarry] = useState<Record<string, string[]>>({});
   const [shiftLabelMode, setShiftLabelMode] = useState<ShiftLabelMode>("alphabet");
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [undoStack, setUndoStack] = useState<Schedule[]>([]);
+  const [redoStack, setRedoStack] = useState<Schedule[]>([]);
+
+  const cloneSchedule = (source: Schedule): Schedule => {
+    return Object.fromEntries(
+      Object.entries(source).map(([personId, days]) => [personId, [...(days ?? [])]]),
+    );
+  };
+
+  const schedulesEqual = (a: Schedule, b: Schedule): boolean => {
+    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+    for (const key of keys) {
+      const daysA = a[key] ?? [];
+      const daysB = b[key] ?? [];
+      if (daysA.length !== daysB.length) {
+        return false;
+      }
+      for (let i = 0; i < daysA.length; i += 1) {
+        if (daysA[i] !== daysB[i]) {
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  const updateScheduleWithHistory = (updater: (draft: Schedule) => Schedule) => {
+    setSchedule((prev) => {
+      const draft = cloneSchedule(prev);
+      const next = updater(draft);
+      if (schedulesEqual(prev, next)) {
+        return prev;
+      }
+      setUndoStack((stack) => [...stack, cloneSchedule(prev)]);
+      setRedoStack([]);
+      return next;
+    });
+  };
 
   useEffect(() => {
     return () => {
@@ -187,6 +226,8 @@ export default function Home() {
         throw new Error(result.message ?? "シフトの作成に失敗しました");
       }
       setSchedule(result.schedule);
+      setUndoStack([]);
+      setRedoStack([]);
       setShortages(result.shortages);
       setCoverageBreakdown(result.coverageBreakdown ?? {});
       setStatusMessage(result.status);
@@ -243,6 +284,104 @@ export default function Home() {
     });
   };
 
+  const ensureRowLength = (row: (string | null | undefined)[], desiredLength: number) => {
+    if (row.length >= desiredLength) {
+      return [...row];
+    }
+    const padded = [...row];
+    while (padded.length < desiredLength) {
+      padded.push(null);
+    }
+    return padded;
+  };
+
+  const handleAssignmentChange = (personId: string, dayIndex: number, shiftCode: string | null) => {
+    updateScheduleWithHistory((draft) => {
+      const daysCount = initialData?.days ?? 0;
+      const currentRow = ensureRowLength(draft[personId] ?? [], daysCount);
+      currentRow[dayIndex] = shiftCode;
+      draft[personId] = currentRow;
+      return draft;
+    });
+  };
+
+  const handleMoveOrCopy = (
+    source: { personId: string; dayIndex: number },
+    target: { personId: string; dayIndex: number },
+    mode: "move" | "copy",
+  ) => {
+    updateScheduleWithHistory((draft) => {
+      const daysCount = initialData?.days ?? 0;
+      const sourceRow = ensureRowLength(draft[source.personId] ?? [], daysCount);
+      const targetRow = ensureRowLength(draft[target.personId] ?? [], daysCount);
+      const shiftCode = sourceRow[source.dayIndex] ?? null;
+      if (!shiftCode) {
+        return draft;
+      }
+      const targetPerson = people.find((person) => person.id === target.personId);
+      const isTargetOnPaidLeave = paidLeaves[target.personId]?.includes(target.dayIndex) ?? false;
+      const isPaidLeaveScheduled = targetRow[target.dayIndex] === "有給";
+      if (!targetPerson || !targetPerson.canWork.includes(shiftCode) || isTargetOnPaidLeave || isPaidLeaveScheduled) {
+        return draft;
+      }
+      targetRow[target.dayIndex] = shiftCode;
+      if (mode === "move") {
+        sourceRow[source.dayIndex] = null;
+      }
+      draft[source.personId] = sourceRow;
+      draft[target.personId] = targetRow;
+      return draft;
+    });
+  };
+
+  const handleUndo = () => {
+    setUndoStack((stack) => {
+      if (stack.length === 0) {
+        return stack;
+      }
+      const previous = stack[stack.length - 1];
+      setRedoStack((redo) => [...redo, cloneSchedule(schedule)]);
+      setSchedule(cloneSchedule(previous));
+      return stack.slice(0, -1);
+    });
+  };
+
+  const handleRedo = () => {
+    setRedoStack((stack) => {
+      if (stack.length === 0) {
+        return stack;
+      }
+      const next = stack[stack.length - 1];
+      setUndoStack((undo) => [...undo, cloneSchedule(schedule)]);
+      setSchedule(cloneSchedule(next));
+      return stack.slice(0, -1);
+    });
+  };
+
+  const handleDraftSave = () => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("shift-draft", JSON.stringify(schedule));
+      }
+      setStatusMessage("下書きを保存しました");
+    } catch (error) {
+      console.error("Failed to save draft", error);
+      setStatusMessage("下書きの保存に失敗しました");
+    }
+  };
+
+  const handleConfirmSave = () => {
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("shift-confirmed", JSON.stringify(schedule));
+      }
+      setStatusMessage("確定保存しました");
+    } catch (error) {
+      console.error("Failed to confirm save", error);
+      setStatusMessage("確定保存に失敗しました");
+    }
+  };
+
   useEffect(() => {
     if (!initialData) {
       return;
@@ -277,28 +416,68 @@ export default function Home() {
           <h1 className="text-2xl font-bold text-gray-800">Shift Scheduler v5</h1>
           {statusMessage && <p className="text-sm text-gray-500 mt-1">状態: {statusMessage}</p>}
         </div>
-        <div className="flex flex-wrap gap-2 justify-end">
-          <button
-            onClick={() =>
-              setShiftLabelMode((prev) => (prev === "alphabet" ? "japanese" : "alphabet"))
-            }
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
-          >
-            {shiftLabelMode === "alphabet" ? "日本語表記で表示" : "アルファベット表記で表示"}
-          </button>
-          <button
-            onClick={handleExportSchedule}
-            className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
-          >
-            エクスポート
-          </button>
-          <button
-            onClick={handleGenerateSchedule}
-            disabled={isLoading}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400"
-          >
-            {isLoading ? "作成中..." : "シフトを作成する"}
-          </button>
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap gap-2 justify-end">
+            <button
+              onClick={() =>
+                setShiftLabelMode((prev) => (prev === "alphabet" ? "japanese" : "alphabet"))
+              }
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
+            >
+              {shiftLabelMode === "alphabet" ? "日本語表記で表示" : "アルファベット表記で表示"}
+            </button>
+            <button
+              onClick={handleExportSchedule}
+              className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300"
+            >
+              エクスポート
+            </button>
+            <button
+              onClick={handleGenerateSchedule}
+              disabled={isLoading}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400"
+            >
+              {isLoading ? "作成中..." : "シフトを作成する"}
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 justify-end text-sm">
+            <button
+              onClick={() => setIsEditMode((prev) => !prev)}
+              className={`px-4 py-2 rounded-lg font-semibold border transition ${
+                isEditMode
+                  ? "bg-orange-100 text-orange-700 border-orange-300"
+                  : "bg-gray-100 text-gray-700 border-gray-300"
+              }`}
+            >
+              {isEditMode ? "編集モード: ON" : "編集モード: OFF"}
+            </button>
+            <button
+              onClick={handleUndo}
+              disabled={undoStack.length === 0}
+              className="px-3 py-2 rounded-lg font-semibold border border-gray-300 bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              Undo
+            </button>
+            <button
+              onClick={handleRedo}
+              disabled={redoStack.length === 0}
+              className="px-3 py-2 rounded-lg font-semibold border border-gray-300 bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              Redo
+            </button>
+            <button
+              onClick={handleDraftSave}
+              className="px-4 py-2 rounded-lg font-semibold border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+            >
+              下書き保存
+            </button>
+            <button
+              onClick={handleConfirmSave}
+              className="px-4 py-2 rounded-lg font-semibold border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
+            >
+              確定保存
+            </button>
+          </div>
         </div>
       </header>
 
@@ -342,9 +521,12 @@ export default function Home() {
               shifts={initialData.shifts}
               needTemplate={initialData.needTemplate}
               dayTypeByDate={initialData.dayTypeByDate}
-            coverageBreakdown={coverageBreakdown}
-            shiftLabelMode={shiftLabelMode}
-          />
+              coverageBreakdown={coverageBreakdown}
+              shiftLabelMode={shiftLabelMode}
+              isEditMode={isEditMode}
+              onAssignmentChange={handleAssignmentChange}
+              onMoveOrCopy={handleMoveOrCopy}
+            />
           </div>
         </div>
       </main>
