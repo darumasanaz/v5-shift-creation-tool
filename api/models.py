@@ -114,3 +114,27 @@ class ScheduleResponse(BaseModel):
     coverageBreakdown: Dict[int, Dict[str, CoverageInfo]] = Field(default_factory=dict)
     status: str
     message: Optional[str] = None
+
+
+class ScheduleChange(BaseModel):
+    personId: str
+    dayIndex: int
+    previous: Optional[str]
+    updated: Optional[str]
+
+
+class ScheduleState(BaseModel):
+    version: int = 1
+    locked: bool = False
+    schedule: Dict[str, List[Optional[str]]] = Field(default_factory=dict)
+
+
+class ScheduleSaveRequest(BaseModel):
+    schedule: Dict[str, List[Optional[str]]]
+    baseVersion: Optional[int] = None
+
+
+class ScheduleSaveResponse(BaseModel):
+    version: int
+    locked: bool
+    changes: List[ScheduleChange] = Field(default_factory=list)

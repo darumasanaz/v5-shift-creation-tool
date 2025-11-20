@@ -2,7 +2,20 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import json
 
-from .models import ScheduleRequest, ScheduleResponse
+from .models import (
+    ScheduleRequest,
+    ScheduleResponse,
+    ScheduleSaveRequest,
+    ScheduleSaveResponse,
+    ScheduleState,
+)
+from .state import (
+    build_save_response,
+    compute_schedule_changes,
+    enforce_version_and_lock,
+    load_schedule_state,
+    save_schedule_state,
+)
 from .solver import solve_shift_scheduling
 
 app = FastAPI()
@@ -46,3 +59,33 @@ def generate_schedule(request: ScheduleRequest):
             status="SOLVER_ERROR",
             message=str(exc),
         )
+
+
+@app.post("/api/save-draft", response_model=ScheduleSaveResponse)
+def save_draft(request: ScheduleSaveRequest):
+    current_state = load_schedule_state()
+    enforce_version_and_lock(request, current_state)
+
+    changes = compute_schedule_changes(current_state.schedule, request.schedule)
+    next_state = ScheduleState(
+        version=current_state.version + 1,
+        locked=False,
+        schedule=request.schedule,
+    )
+    save_schedule_state(next_state)
+    return build_save_response(next_state, changes)
+
+
+@app.post("/api/finalize-schedule", response_model=ScheduleSaveResponse)
+def finalize_schedule(request: ScheduleSaveRequest):
+    current_state = load_schedule_state()
+    enforce_version_and_lock(request, current_state)
+
+    changes = compute_schedule_changes(current_state.schedule, request.schedule)
+    next_state = ScheduleState(
+        version=current_state.version + 1,
+        locked=True,
+        schedule=request.schedule,
+    )
+    save_schedule_state(next_state)
+    return build_save_response(next_state, changes)
