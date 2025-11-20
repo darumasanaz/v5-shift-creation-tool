@@ -315,11 +315,11 @@ def solve_shift_scheduling(request: ScheduleRequest):
         model.Add(
             assigned_days + recovery_days + paid_leave_count >= people[p].monthlyMin
         )
-        # The existing monthlyMax values in the data describe the number of actual
-        # shift assignments (plus paid leave), so we keep that limit on the real
-        # assignments while still treating recovery days as worked days in the
-        # counts reported to the user.
-        model.Add(assigned_days + paid_leave_count <= people[p].monthlyMax)
+        # Treat night-shift recovery days as worked days for both lower and upper
+        # monthly limits so "明" contributes to contractual staffing counts.
+        model.Add(
+            assigned_days + recovery_days + paid_leave_count <= people[p].monthlyMax
+        )
 
     # Night shift rest enforcement
     night_shift_codes = [
