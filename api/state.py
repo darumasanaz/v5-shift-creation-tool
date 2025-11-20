@@ -93,6 +93,22 @@ def enforce_version_and_lock(
             },
         )
 
+    persisted_state_exists = STATE_FILE.exists()
+
+    if persisted_state_exists and request.baseVersion is None:
+        changes = compute_schedule_changes(
+            current_state.schedule, request.schedule
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "VERSION_CONFLICT",
+                "message": "Missing baseVersion for existing draft.",
+                "currentVersion": current_state.version,
+                "changes": [change.model_dump() for change in changes],
+            },
+        )
+
     if (
         request.baseVersion is not None
         and request.baseVersion != current_state.version
