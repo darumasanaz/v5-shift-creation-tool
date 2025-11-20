@@ -879,7 +879,7 @@ export default function Calendar({
                               value={shiftOption.code}
                               disabled={!person.canWork.includes(shiftOption.code)}
                             >
-                              {`${shiftOption.name} (${toDisplayShiftLabel(shiftOption, shiftLabelMode)})`}
+                              {`${shiftOption.name} (${toDisplayShiftLabel(shiftOption.code, shiftLabelMode)})`}
                             </option>
                           ))}
                         </select>
