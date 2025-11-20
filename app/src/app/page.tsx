@@ -318,6 +318,12 @@ export default function Home() {
       if (!shiftCode) {
         return draft;
       }
+      const targetPerson = people.find((person) => person.id === target.personId);
+      const isTargetOnPaidLeave = paidLeaves[target.personId]?.includes(target.dayIndex) ?? false;
+      const isPaidLeaveScheduled = targetRow[target.dayIndex] === "有給";
+      if (!targetPerson || !targetPerson.canWork.includes(shiftCode) || isTargetOnPaidLeave || isPaidLeaveScheduled) {
+        return draft;
+      }
       targetRow[target.dayIndex] = shiftCode;
       if (mode === "move") {
         sourceRow[source.dayIndex] = null;
