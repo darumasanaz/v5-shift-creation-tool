@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent as ReactMouseEvent } from "react";
+import type { CSSProperties, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { normalizeDayTypeByDate, normalizeWeekdayIndex } from "../utils/dateUtils";
 import { ShiftLabelMode, toDisplayShiftLabel } from "../utils/shiftLabels";
@@ -38,6 +38,13 @@ interface CalendarProps {
   coverageBreakdown: CoverageBreakdown;
   onShortagesCalculated?: (shortages: DisplayShortageInfo[]) => void;
   shiftLabelMode: ShiftLabelMode;
+  isEditMode: boolean;
+  onAssignmentChange: (personId: string, dayIndex: number, shiftCode: string | null) => void;
+  onMoveOrCopy: (
+    source: { personId: string; dayIndex: number },
+    target: { personId: string; dayIndex: number },
+    mode: "move" | "copy",
+  ) => void;
 }
 
 const WEEKDAYS = ["月", "火", "水", "木", "金", "土", "日"];
@@ -166,6 +173,9 @@ export default function Calendar({
   coverageBreakdown,
   onShortagesCalculated,
   shiftLabelMode,
+  isEditMode,
+  onAssignmentChange,
+  onMoveOrCopy,
 }: CalendarProps) {
   const normalizedWeekdayOfDay1 = useMemo(
     () => normalizeWeekdayIndex(weekdayOfDay1),
@@ -209,6 +219,8 @@ export default function Calendar({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [showCoverageRows, setShowCoverageRows] = useState(false);
   const [showRequirementRows, setShowRequirementRows] = useState(false);
+  const [editTarget, setEditTarget] = useState<{ personId: string; dayIndex: number } | null>(null);
+  const [dragSource, setDragSource] = useState<{ personId: string; dayIndex: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const clickTimeoutRef = useRef<number | null>(null);
   const pendingClickRef = useRef<{ personId: string; dayIndex: number } | null>(null);
@@ -552,6 +564,10 @@ export default function Calendar({
 
   const handleDayClick = useCallback(
     (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (isEditMode) {
+        setEditTarget({ personId, dayIndex });
+        return;
+      }
       if (!selectedStaff || selectedStaff.id !== personId) {
         return;
       }
@@ -568,11 +584,15 @@ export default function Calendar({
         clearClickTimeout();
       }, 200);
     },
-    [selectedStaff, onWishOffToggle, clearClickTimeout],
+    [selectedStaff, onWishOffToggle, clearClickTimeout, isEditMode],
   );
 
   const handleDayDoubleClick = useCallback(
     (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (isEditMode) {
+        setEditTarget({ personId, dayIndex });
+        return;
+      }
       if (!selectedStaff || selectedStaff.id !== personId) {
         return;
       }
@@ -580,18 +600,21 @@ export default function Calendar({
       clearClickTimeout();
       onPaidLeaveToggle(personId, dayIndex);
     },
-    [selectedStaff, onPaidLeaveToggle, clearClickTimeout],
+    [selectedStaff, onPaidLeaveToggle, clearClickTimeout, isEditMode],
   );
 
   const handleContextMenu = useCallback(
     (event: ReactMouseEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (isEditMode) {
+        return;
+      }
       if (!selectedStaff || selectedStaff.id !== personId) {
         return;
       }
       event.preventDefault();
       setContextMenu({ personId, dayIndex, x: event.clientX, y: event.clientY });
     },
-    [selectedStaff],
+    [selectedStaff, isEditMode],
   );
 
   const handlePreferenceSelect = useCallback(
@@ -603,6 +626,51 @@ export default function Calendar({
       setContextMenu(null);
     },
     [contextMenu, onShiftPreferenceChange],
+  );
+
+  const handleDragStart = useCallback(
+    (
+      event: ReactDragEvent<HTMLTableCellElement>,
+      personId: string,
+      dayIndex: number,
+      shiftCode: string | null,
+    ) => {
+      if (!isEditMode || !shiftCode) {
+        return;
+      }
+      setDragSource({ personId, dayIndex });
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "copyMove";
+        event.dataTransfer.setData("text/plain", shiftCode);
+      }
+    },
+    [isEditMode],
+  );
+
+  const handleDragOver = useCallback(
+    (event: ReactDragEvent<HTMLTableCellElement>) => {
+      if (!isEditMode || !dragSource) {
+        return;
+      }
+      event.preventDefault();
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = event.ctrlKey || event.metaKey || event.altKey ? "copy" : "move";
+      }
+    },
+    [dragSource, isEditMode],
+  );
+
+  const handleDrop = useCallback(
+    (event: ReactDragEvent<HTMLTableCellElement>, personId: string, dayIndex: number) => {
+      if (!isEditMode || !dragSource) {
+        return;
+      }
+      event.preventDefault();
+      const shouldCopy = event.ctrlKey || event.metaKey || event.altKey;
+      onMoveOrCopy(dragSource, { personId, dayIndex }, shouldCopy ? "copy" : "move");
+      setDragSource(null);
+    },
+    [dragSource, isEditMode, onMoveOrCopy],
   );
 
   useEffect(() => {
@@ -643,6 +711,13 @@ export default function Calendar({
     };
   }, [clearClickTimeout]);
 
+  useEffect(() => {
+    if (!isEditMode) {
+      setEditTarget(null);
+      setDragSource(null);
+    }
+  }, [isEditMode]);
+
   const activePreference = contextMenu
     ? shiftPreferences[contextMenu.personId]?.[contextMenu.dayIndex] ?? null
     : null;
@@ -681,7 +756,9 @@ export default function Calendar({
           {year}年 {month}月
         </h2>
         <p className="text-xs text-gray-500">
-          セルをクリックで希望休、ダブルクリックで有給、右クリックで希望シフトを設定できます
+          {isEditMode
+            ? "編集モード中: クリックで直接編集、ドラッグ＆ドロップで移動、Ctrl/⌘/Alt+ドラッグで複製できます"
+            : "セルをクリックで希望休、ダブルクリックで有給、右クリックで希望シフトを設定できます"}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-4 mb-3 text-sm text-gray-700">
@@ -761,6 +838,8 @@ export default function Calendar({
                 const isSelected = selectedStaff?.id === person.id;
                 const preferredShiftCode = shiftPreferences[person.id]?.[dayIndex] ?? null;
                 const preferredShift = preferredShiftCode ? shiftByCode.get(preferredShiftCode) : null;
+                const isEditingCell =
+                  isEditMode && editTarget?.personId === person.id && editTarget.dayIndex === dayIndex;
 
                 return (
                   <td
@@ -768,6 +847,11 @@ export default function Calendar({
                     onClick={(event) => handleDayClick(event, person.id, dayIndex)}
                     onDoubleClick={(event) => handleDayDoubleClick(event, person.id, dayIndex)}
                     onContextMenu={(event) => handleContextMenu(event, person.id, dayIndex)}
+                    onDragStart={(event) => handleDragStart(event, person.id, dayIndex, shift)}
+                    onDragOver={handleDragOver}
+                    onDrop={(event) => handleDrop(event, person.id, dayIndex)}
+                    onDragEnd={() => setDragSource(null)}
+                    draggable={isEditMode && !!shift}
                     className={`p-2 border border-gray-300 relative ${
                       isSelected ? "cursor-pointer" : ""
                     } ${showPaidLeave ? "bg-amber-50" : ""} ${
@@ -778,17 +862,50 @@ export default function Calendar({
                         : ""
                     }`}
                   >
-                    {showPaidLeave && <span className="text-amber-600 font-bold">有給</span>}
-                    {!showPaidLeave && isWishedOff && (
-                      <span className="text-red-500 font-bold">休</span>
-                    )}
-                    {!showPaidLeave && !isWishedOff && shift && (
-                      <span className={`font-bold ${shiftColorClass}`}>
-                        {toDisplayShiftLabel(shift, shiftLabelMode)}
-                      </span>
-                    )}
-                    {!showPaidLeave && !isWishedOff && !shift && (
-                      <span className="text-gray-300">-</span>
+                    {isEditingCell ? (
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="border border-gray-300 rounded px-2 py-1 text-sm focus:ring-2 focus:ring-blue-400"
+                          value={shift ?? ""}
+                          onChange={(event) => {
+                            const value = event.target.value || null;
+                            onAssignmentChange(person.id, dayIndex, value);
+                          }}
+                        >
+                          <option value="">割り当てなし</option>
+                          {shifts.map((shiftOption) => (
+                            <option
+                              key={shiftOption.code}
+                              value={shiftOption.code}
+                              disabled={!person.canWork.includes(shiftOption.code)}
+                            >
+                              {`${shiftOption.name} (${toDisplayShiftLabel(shiftOption, shiftLabelMode)})`}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => onAssignmentChange(person.id, dayIndex, null)}
+                          className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 bg-white hover:bg-gray-100"
+                        >
+                          クリア
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {showPaidLeave && <span className="text-amber-600 font-bold">有給</span>}
+                        {!showPaidLeave && isWishedOff && (
+                          <span className="text-red-500 font-bold">休</span>
+                        )}
+                        {!showPaidLeave && !isWishedOff && shift && (
+                          <span className={`font-bold ${shiftColorClass}`}>
+                            {toDisplayShiftLabel(shift, shiftLabelMode)}
+                          </span>
+                        )}
+                        {!showPaidLeave && !isWishedOff && !shift && (
+                          <span className="text-gray-300">-</span>
+                        )}
+                      </>
                     )}
                     {preferredShiftCode && !isWishedOff && !showPaidLeave && (
                       <span className="absolute bottom-1 right-1 text-[10px] px-1 py-0.5 rounded bg-blue-100 text-blue-700 border border-blue-200 shadow-sm">
