@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import json
 
+from .data_loader import load_input_data
 from .models import (
     ScheduleRequest,
     ScheduleResponse,
@@ -16,6 +16,7 @@ from .state import (
     load_schedule_state,
     save_schedule_state,
 )
+from .validation import load_validation_context, validate_schedule_rules
 from .solver import solve_shift_scheduling
 
 app = FastAPI()
@@ -32,10 +33,9 @@ app.add_middleware(
 @app.get("/api/initial-data")
 def get_initial_data():
     try:
-        with open("api/input_data.json", "r", encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail="Initial data not found.") from exc
+        payload = load_input_data()
+        schedule_state = load_schedule_state()
+        return {**payload, "scheduleState": schedule_state.model_dump()}
     except Exception as exc:  # pragma: no cover - generic safeguard
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -65,6 +65,10 @@ def generate_schedule(request: ScheduleRequest):
 def save_draft(request: ScheduleSaveRequest):
     current_state = load_schedule_state()
     enforce_version_and_lock(request, current_state)
+    people, shifts, days, weekday_of_day1 = load_validation_context(request.people)
+    validate_schedule_rules(
+        request.schedule, people, shifts, days, weekday_of_day1
+    )
 
     changes = compute_schedule_changes(current_state.schedule, request.schedule)
     next_state = ScheduleState(
@@ -80,6 +84,10 @@ def save_draft(request: ScheduleSaveRequest):
 def finalize_schedule(request: ScheduleSaveRequest):
     current_state = load_schedule_state()
     enforce_version_and_lock(request, current_state)
+    people, shifts, days, weekday_of_day1 = load_validation_context(request.people)
+    validate_schedule_rules(
+        request.schedule, people, shifts, days, weekday_of_day1
+    )
 
     changes = compute_schedule_changes(current_state.schedule, request.schedule)
     next_state = ScheduleState(
