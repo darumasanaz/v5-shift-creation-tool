@@ -387,23 +387,110 @@ export default function Home() {
     mode: "move" | "copy",
   ) => {
     updateScheduleWithHistory((draft) => {
-      const daysCount = initialData?.days ?? 0;
+      if (!initialData) {
+        return draft;
+      }
+
+      const daysCount = initialData.days ?? 0;
+      const nightShiftCodes = new Set(
+        initialData.shifts
+          .filter((shift) => shift.end > 24)
+          .map((shift) => shift.code),
+      );
+      const isNightShift = (code: string | null | undefined): code is string =>
+        typeof code === "string" && nightShiftCodes.has(code);
+      const REST_CODE = "明";
+
       const sourceRow = ensureRowLength(draft[source.personId] ?? [], daysCount);
-      const targetRow = ensureRowLength(draft[target.personId] ?? [], daysCount);
+      const targetRow =
+        source.personId === target.personId
+          ? sourceRow
+          : ensureRowLength(draft[target.personId] ?? [], daysCount);
       const shiftCode = sourceRow[source.dayIndex] ?? null;
       if (!shiftCode) {
         return draft;
       }
-      const targetPerson = people.find((person) => person.id === target.personId);
-      const isTargetOnPaidLeave = paidLeaves[target.personId]?.includes(target.dayIndex) ?? false;
-      const isPaidLeaveScheduled = targetRow[target.dayIndex] === "有給";
-      if (!targetPerson || !targetPerson.canWork.includes(shiftCode) || isTargetOnPaidLeave || isPaidLeaveScheduled) {
+      const targetShiftCode = targetRow[target.dayIndex] ?? null;
+
+      const canAssignShift = (
+        personId: string,
+        row: (string | null | undefined)[],
+        dayIndex: number,
+        code: string | null,
+      ) => {
+        if (!code || code === REST_CODE) {
+          return true;
+        }
+        const person = people.find((p) => p.id === personId);
+        if (!person) {
+          return false;
+        }
+        const isOnPaidLeave = paidLeaves[personId]?.includes(dayIndex) ?? false;
+        const isPaidLeaveScheduled = row[dayIndex] === "有給";
+        return person.canWork.includes(code) && !isOnPaidLeave && !isPaidLeaveScheduled;
+      };
+
+      if (!canAssignShift(target.personId, targetRow, target.dayIndex, shiftCode)) {
         return draft;
       }
-      targetRow[target.dayIndex] = shiftCode;
-      if (mode === "move") {
-        sourceRow[source.dayIndex] = null;
+      if (
+        mode === "move" &&
+        targetShiftCode &&
+        !canAssignShift(source.personId, sourceRow, source.dayIndex, targetShiftCode)
+      ) {
+        return draft;
       }
+
+      const sourceRestIndex = source.dayIndex + 1;
+      const targetRestIndex = target.dayIndex + 1;
+      const sourceHasRest =
+        isNightShift(shiftCode) &&
+        sourceRestIndex < daysCount &&
+        sourceRow[sourceRestIndex] === REST_CODE;
+      const targetHasRest =
+        targetShiftCode &&
+        isNightShift(targetShiftCode) &&
+        targetRestIndex < daysCount &&
+        targetRow[targetRestIndex] === REST_CODE;
+
+      if (mode === "move" && targetShiftCode) {
+        sourceRow[source.dayIndex] = targetShiftCode;
+        targetRow[target.dayIndex] = shiftCode;
+
+        if (isNightShift(shiftCode)) {
+          if (sourceHasRest) {
+            sourceRow[sourceRestIndex] = null;
+          }
+          if (targetRestIndex < daysCount) {
+            targetRow[targetRestIndex] = REST_CODE;
+          }
+        }
+
+        if (isNightShift(targetShiftCode)) {
+          const targetShiftRestIndex = source.dayIndex + 1;
+          if (targetHasRest) {
+            targetRow[targetRestIndex] = null;
+          }
+          if (targetShiftRestIndex < daysCount) {
+            sourceRow[targetShiftRestIndex] = REST_CODE;
+          }
+        }
+      } else {
+        targetRow[target.dayIndex] = shiftCode;
+        if (mode === "move") {
+          sourceRow[source.dayIndex] = null;
+        }
+
+        if (isNightShift(shiftCode)) {
+          if (mode === "move" && sourceHasRest) {
+            sourceRow[sourceRestIndex] = null;
+          }
+          if (targetRestIndex < daysCount) {
+            targetRow[targetRestIndex] = REST_CODE;
+          }
+        }
+      }
+
       draft[source.personId] = sourceRow;
       draft[target.personId] = targetRow;
       return draft;
