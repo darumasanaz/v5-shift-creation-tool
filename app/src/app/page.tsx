@@ -454,6 +454,10 @@ export default function Home() {
         targetRow[targetRestIndex] === REST_CODE;
 
       if (mode === "move" && targetShiftCode) {
+        if (isNightShift(targetShiftCode) && targetHasRest) {
+          targetRow[targetRestIndex] = null;
+        }
+
         sourceRow[source.dayIndex] = targetShiftCode;
         targetRow[target.dayIndex] = shiftCode;
 
@@ -461,17 +465,14 @@ export default function Home() {
           if (sourceHasRest) {
             sourceRow[sourceRestIndex] = null;
           }
-          if (targetRestIndex < daysCount) {
+          if (targetRestIndex < daysCount && targetRow[targetRestIndex] == null) {
             targetRow[targetRestIndex] = REST_CODE;
           }
         }
 
         if (isNightShift(targetShiftCode)) {
           const targetShiftRestIndex = source.dayIndex + 1;
-          if (targetHasRest) {
-            targetRow[targetRestIndex] = null;
-          }
-          if (targetShiftRestIndex < daysCount) {
+          if (targetShiftRestIndex < daysCount && sourceRow[targetShiftRestIndex] == null) {
             sourceRow[targetShiftRestIndex] = REST_CODE;
           }
         }
@@ -485,7 +486,7 @@ export default function Home() {
           if (mode === "move" && sourceHasRest) {
             sourceRow[sourceRestIndex] = null;
           }
-          if (targetRestIndex < daysCount) {
+          if (targetRestIndex < daysCount && targetRow[targetRestIndex] == null) {
             targetRow[targetRestIndex] = REST_CODE;
           }
         }
