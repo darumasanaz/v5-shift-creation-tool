@@ -43,18 +43,11 @@ export interface InitialData {
   dayTypeByDate: string[];
   previousMonthNightCarry?: Record<string, string[]>;
   paidLeaves?: PaidLeaveRequests;
-  scheduleState?: ScheduleState;
 }
 
 export type ShiftPreferences = Record<string, Record<number, string>>;
 
 export type Schedule = Record<string, (string | null | undefined)[]>;
-
-export interface ScheduleState {
-  version: number;
-  locked: boolean;
-  schedule: Schedule;
-}
 
 export interface ShortageInfo {
   day: number;
@@ -81,17 +74,4 @@ export interface ScheduleResponse {
   coverageBreakdown: CoverageBreakdown;
   status: string;
   message?: string;
-}
-
-export interface ScheduleChange {
-  personId: string;
-  dayIndex: number;
-  previous: string | null | undefined;
-  updated: string | null | undefined;
-}
-
-export interface ScheduleSaveResponse {
-  version: number;
-  locked: boolean;
-  changes: ScheduleChange[];
 }

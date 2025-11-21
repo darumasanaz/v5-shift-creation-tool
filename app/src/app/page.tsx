@@ -7,8 +7,6 @@ import {
   PaidLeaveRequests,
   Person,
   Schedule,
-  ScheduleSaveResponse,
-  ScheduleState,
   ScheduleResponse,
   Shift,
   ShiftPreferences,
@@ -16,7 +14,6 @@ import {
   WishOffs,
 } from "../types";
 import { buildScheduleMatrix, toCsvString } from "../utils/export";
-import { validateScheduleRules } from "../utils/ruleValidation";
 import Calendar from "../components/Calendar";
 import StaffList from "../components/StaffList";
 import StaffEditor from "../components/StaffEditor";
@@ -74,8 +71,6 @@ export default function Home() {
   const [paidLeaves, setPaidLeaves] = useState<PaidLeaveRequests>({});
   const [shiftPreferences, setShiftPreferences] = useState<ShiftPreferences>({});
   const [schedule, setSchedule] = useState<Schedule>({});
-  const [scheduleVersion, setScheduleVersion] = useState<number | null>(null);
-  const [isLocked, setIsLocked] = useState(false);
   const [shortages, setShortages] = useState<ShortageInfo[]>([]);
   const [coverageBreakdown, setCoverageBreakdown] = useState<CoverageBreakdown>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -113,10 +108,6 @@ export default function Home() {
   };
 
   const updateScheduleWithHistory = (updater: (draft: Schedule) => Schedule) => {
-    if (isLocked) {
-      setStatusMessage("確定済みのため編集できません。再読み込みして再編集してください。");
-      return;
-    }
     setSchedule((prev) => {
       const draft = cloneSchedule(prev);
       const next = updater(draft);
@@ -127,28 +118,6 @@ export default function Home() {
       setRedoStack([]);
       return next;
     });
-  };
-
-  const validateBeforeSave = (): boolean => {
-    if (!initialData) {
-      setStatusMessage("初期データの読み込みを待っています");
-      return false;
-    }
-    const violations = validateScheduleRules(
-      schedule,
-      people,
-      initialData.shifts,
-      initialData.days,
-      initialData.weekdayOfDay1,
-    );
-    if (violations.length > 0) {
-      const message = violations
-        .map((v) => `${v.personId}: ${v.message}`)
-        .join(" / ");
-      setStatusMessage(`保存できません: ${message}`);
-      return false;
-    }
-    return true;
   };
 
   useEffect(() => {
@@ -170,15 +139,6 @@ export default function Home() {
         setInitialData(data);
         setPeople(data.people);
         setPaidLeaves(data.paidLeaves ?? {});
-        const savedState: ScheduleState | undefined = data.scheduleState;
-        if (savedState) {
-          setSchedule(savedState.schedule ?? {});
-          setScheduleVersion(savedState.version ?? 1);
-          setIsLocked(savedState.locked ?? false);
-        } else {
-          setScheduleVersion(1);
-          setIsLocked(false);
-        }
         setPreviousMonthNightCarry(() => {
           const initialCarry = data.previousMonthNightCarry ?? {};
           return sanitizeCarry(initialCarry, data.shifts, data.people);
@@ -244,10 +204,6 @@ export default function Home() {
   };
 
   const handleGenerateSchedule = async () => {
-    if (isLocked) {
-      setStatusMessage("確定済みのため編集できません。再読み込みして再編集してください。");
-      return;
-    }
     setIsLoading(true);
     setStatusMessage(null);
     setSchedule({});
@@ -379,10 +335,6 @@ export default function Home() {
   };
 
   const handleUndo = () => {
-    if (isLocked) {
-      setStatusMessage("確定済みのため編集できません。再読み込みして再編集してください。");
-      return;
-    }
     setUndoStack((stack) => {
       if (stack.length === 0) {
         return stack;
@@ -395,10 +347,6 @@ export default function Home() {
   };
 
   const handleRedo = () => {
-    if (isLocked) {
-      setStatusMessage("確定済みのため編集できません。再読み込みして再編集してください。");
-      return;
-    }
     setRedoStack((stack) => {
       if (stack.length === 0) {
         return stack;
@@ -410,60 +358,28 @@ export default function Home() {
     });
   };
 
-  const saveSchedule = async (mode: "draft" | "final") => {
-    if (isLocked) {
-      setStatusMessage("確定済みのため編集できません。再読み込みして再編集してください。");
-      return;
-    }
-    if (!validateBeforeSave()) {
-      return;
-    }
-    try {
-      const res = await fetch(
-        mode === "draft" ? "/api/save-draft" : "/api/finalize-schedule",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            schedule,
-            people,
-            baseVersion: scheduleVersion ?? undefined,
-          }),
-        },
-      );
-      const result = (await res.json()) as ScheduleSaveResponse | { detail?: unknown };
-      if (!res.ok) {
-        const detail = (result as { detail?: { message?: string; violations?: string[] } }).detail;
-        if (res.status === 409 || res.status === 423) {
-          setStatusMessage("保存に失敗しました。再読み込みして再編集してください。");
-          return;
-        }
-        if (detail && typeof detail === "object" && "violations" in detail) {
-          const message = Array.isArray((detail as { violations?: string[] }).violations)
-            ? (detail as { violations: string[] }).violations.join(" / ")
-            : (detail as { message?: string }).message ?? "保存に失敗しました";
-          setStatusMessage(`保存できません: ${message}`);
-          return;
-        }
-        setStatusMessage((detail as { message?: string })?.message ?? "保存に失敗しました");
-        return;
-      }
-      const saveResponse = result as ScheduleSaveResponse;
-      setScheduleVersion(saveResponse.version);
-      setIsLocked(saveResponse.locked);
-      setStatusMessage(mode === "draft" ? "下書きを保存しました" : "確定保存しました");
-    } catch (error) {
-      console.error("Failed to save schedule", error);
-      setStatusMessage("保存中にエラーが発生しました");
-    }
-  };
-
   const handleDraftSave = () => {
-    void saveSchedule("draft");
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("shift-draft", JSON.stringify(schedule));
+      }
+      setStatusMessage("下書きを保存しました");
+    } catch (error) {
+      console.error("Failed to save draft", error);
+      setStatusMessage("下書きの保存に失敗しました");
+    }
   };
 
   const handleConfirmSave = () => {
-    void saveSchedule("final");
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("shift-confirmed", JSON.stringify(schedule));
+      }
+      setStatusMessage("確定保存しました");
+    } catch (error) {
+      console.error("Failed to confirm save", error);
+      setStatusMessage("確定保存に失敗しました");
+    }
   };
 
   useEffect(() => {
@@ -518,7 +434,7 @@ export default function Home() {
             </button>
             <button
               onClick={handleGenerateSchedule}
-              disabled={isLoading || isLocked}
+              disabled={isLoading}
               className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400"
             >
               {isLoading ? "作成中..." : "シフトを作成する"}
@@ -537,28 +453,26 @@ export default function Home() {
             </button>
             <button
               onClick={handleUndo}
-              disabled={undoStack.length === 0 || isLocked}
+              disabled={undoStack.length === 0}
               className="px-3 py-2 rounded-lg font-semibold border border-gray-300 bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
             >
               Undo
             </button>
             <button
               onClick={handleRedo}
-              disabled={redoStack.length === 0 || isLocked}
+              disabled={redoStack.length === 0}
               className="px-3 py-2 rounded-lg font-semibold border border-gray-300 bg-white text-gray-700 disabled:bg-gray-100 disabled:text-gray-400"
             >
               Redo
             </button>
             <button
               onClick={handleDraftSave}
-              disabled={isLocked}
               className="px-4 py-2 rounded-lg font-semibold border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
             >
               下書き保存
             </button>
             <button
               onClick={handleConfirmSave}
-              disabled={isLocked}
               className="px-4 py-2 rounded-lg font-semibold border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
             >
               確定保存

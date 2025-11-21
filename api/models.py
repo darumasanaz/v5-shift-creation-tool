@@ -131,7 +131,6 @@ class ScheduleState(BaseModel):
 
 class ScheduleSaveRequest(BaseModel):
     schedule: Dict[str, List[Optional[str]]]
-    people: Optional[List[Person]] = None
     baseVersion: Optional[int] = None
 
 
