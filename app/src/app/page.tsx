@@ -251,7 +251,7 @@ export default function Home() {
     setSchedule(cloneSchedule(restored.schedule));
     setUndoStack([]);
     setRedoStack([]);
-    setStatusMessage(restored.source === "confirmed" ? "前回の確定保存を復元しました" : "前回の下書きを復元しました");
+    setStatusMessage("前回の保存を復元しました");
   }, [initialData]);
 
   const handleWishOffToggle = (personId: string, dayIndex: number) => {
@@ -565,23 +565,13 @@ export default function Home() {
     window.localStorage.setItem(key, JSON.stringify(payload));
   };
 
-  const handleDraftSave = () => {
-    try {
-      persistScheduleToStorage("shift-draft");
-      setStatusMessage("下書きを保存しました");
-    } catch (error) {
-      console.error("Failed to save draft", error);
-      setStatusMessage("下書きの保存に失敗しました");
-    }
-  };
-
-  const handleConfirmSave = () => {
+  const handleSave = () => {
     try {
       persistScheduleToStorage("shift-confirmed");
-      setStatusMessage("確定保存しました");
+      setStatusMessage("保存しました");
     } catch (error) {
-      console.error("Failed to confirm save", error);
-      setStatusMessage("確定保存に失敗しました");
+      console.error("Failed to save", error);
+      setStatusMessage("保存に失敗しました");
     }
   };
 
@@ -669,16 +659,10 @@ export default function Home() {
               Redo
             </button>
             <button
-              onClick={handleDraftSave}
-              className="px-4 py-2 rounded-lg font-semibold border border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
-            >
-              下書き保存
-            </button>
-            <button
-              onClick={handleConfirmSave}
+              onClick={handleSave}
               className="px-4 py-2 rounded-lg font-semibold border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100"
             >
-              確定保存
+              保存
             </button>
           </div>
         </div>
