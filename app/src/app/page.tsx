@@ -64,11 +64,14 @@ const mapsEqual = (
   });
 };
 
-const SCHEDULE_STORAGE_VERSION = 2;
+const SCHEDULE_STORAGE_VERSION = 3;
 
 interface StoredSchedule {
   schedule: Schedule;
   people?: Person[];
+  wishOffs?: WishOffs;
+  paidLeaves?: PaidLeaveRequests;
+  shiftPreferences?: ShiftPreferences;
   savedAt: number;
   source: "draft" | "confirmed";
 }
@@ -145,6 +148,9 @@ export default function Home() {
           return {
             schedule: (parsed as { schedule: Schedule }).schedule,
             people: (parsed as { people?: Person[] }).people,
+            wishOffs: (parsed as { wishOffs?: WishOffs }).wishOffs,
+            paidLeaves: (parsed as { paidLeaves?: PaidLeaveRequests }).paidLeaves,
+            shiftPreferences: (parsed as { shiftPreferences?: ShiftPreferences }).shiftPreferences,
             savedAt: Number.isNaN(savedAt) ? 0 : savedAt,
             source,
           };
@@ -232,6 +238,15 @@ export default function Home() {
     }
     if (restored.people) {
       setPeople(restored.people);
+    }
+    if (restored.wishOffs) {
+      setWishOffs(restored.wishOffs);
+    }
+    if (restored.paidLeaves) {
+      setPaidLeaves(restored.paidLeaves);
+    }
+    if (restored.shiftPreferences) {
+      setShiftPreferences(restored.shiftPreferences);
     }
     setSchedule(cloneSchedule(restored.schedule));
     setUndoStack([]);
@@ -543,6 +558,9 @@ export default function Home() {
       savedAt: new Date().toISOString(),
       schedule,
       people,
+      wishOffs,
+      paidLeaves,
+      shiftPreferences,
     };
     window.localStorage.setItem(key, JSON.stringify(payload));
   };
