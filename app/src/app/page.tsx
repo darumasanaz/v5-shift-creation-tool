@@ -64,6 +64,8 @@ const mapsEqual = (
   });
 };
 
+const SCHEDULE_STORAGE_VERSION = 1;
+
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -120,6 +122,66 @@ export default function Home() {
     });
   };
 
+  type StoredSchedule = {
+    schedule: Schedule;
+    savedAt: number;
+    source: "draft" | "confirmed";
+  };
+
+  const parseStoredSchedule = (raw: string, source: "draft" | "confirmed"): StoredSchedule | null => {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        if ("schedule" in parsed) {
+          const savedAt = typeof (parsed as { savedAt?: string }).savedAt === "string"
+            ? Date.parse((parsed as { savedAt?: string }).savedAt as string)
+            : Number.NaN;
+          return {
+            schedule: (parsed as { schedule: Schedule }).schedule,
+            savedAt: Number.isNaN(savedAt) ? 0 : savedAt,
+            source,
+          };
+        }
+
+        return { schedule: parsed as Schedule, savedAt: 0, source };
+      }
+    } catch (error) {
+      console.error("Failed to parse stored schedule", error);
+    }
+    return null;
+  };
+
+  const readStoredSchedule = (key: string, source: "draft" | "confirmed"): StoredSchedule | null => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const raw = window.localStorage.getItem(key);
+    if (!raw) {
+      return null;
+    }
+    return parseStoredSchedule(raw, source);
+  };
+
+  const getMostRecentSchedule = (): StoredSchedule | null => {
+    const candidates = [
+      readStoredSchedule("shift-confirmed", "confirmed"),
+      readStoredSchedule("shift-draft", "draft"),
+    ].filter(Boolean) as StoredSchedule[];
+
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    candidates.sort((a, b) => {
+      if (a.savedAt === b.savedAt) {
+        return a.source === "confirmed" ? -1 : 1;
+      }
+      return b.savedAt - a.savedAt;
+    });
+
+    return candidates[0];
+  };
+
   useEffect(() => {
     return () => {
       if (csvUrl) {
@@ -150,6 +212,20 @@ export default function Home() {
     };
     fetchData();
   }, []);
+
+  useEffect(() => {
+    if (!initialData) {
+      return;
+    }
+    const restored = getMostRecentSchedule();
+    if (!restored) {
+      return;
+    }
+    setSchedule(cloneSchedule(restored.schedule));
+    setUndoStack([]);
+    setRedoStack([]);
+    setStatusMessage(restored.source === "confirmed" ? "前回の確定保存を復元しました" : "前回の下書きを復元しました");
+  }, [initialData]);
 
   const handleWishOffToggle = (personId: string, dayIndex: number) => {
     setWishOffs((prev) => {
@@ -358,11 +434,21 @@ export default function Home() {
     });
   };
 
+  const persistScheduleToStorage = (key: string) => {
+    if (typeof window === "undefined") {
+      throw new Error("window is undefined");
+    }
+    const payload = {
+      version: SCHEDULE_STORAGE_VERSION,
+      savedAt: new Date().toISOString(),
+      schedule,
+    };
+    window.localStorage.setItem(key, JSON.stringify(payload));
+  };
+
   const handleDraftSave = () => {
     try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("shift-draft", JSON.stringify(schedule));
-      }
+      persistScheduleToStorage("shift-draft");
       setStatusMessage("下書きを保存しました");
     } catch (error) {
       console.error("Failed to save draft", error);
@@ -372,9 +458,7 @@ export default function Home() {
 
   const handleConfirmSave = () => {
     try {
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem("shift-confirmed", JSON.stringify(schedule));
-      }
+      persistScheduleToStorage("shift-confirmed");
       setStatusMessage("確定保存しました");
     } catch (error) {
       console.error("Failed to confirm save", error);
