@@ -64,7 +64,14 @@ const mapsEqual = (
   });
 };
 
-const SCHEDULE_STORAGE_VERSION = 1;
+const SCHEDULE_STORAGE_VERSION = 2;
+
+interface StoredSchedule {
+  schedule: Schedule;
+  people?: Person[];
+  savedAt: number;
+  source: "draft" | "confirmed";
+}
 
 export default function Home() {
   const [initialData, setInitialData] = useState<InitialData | null>(null);
@@ -122,28 +129,30 @@ export default function Home() {
     });
   };
 
-  type StoredSchedule = {
-    schedule: Schedule;
-    savedAt: number;
-    source: "draft" | "confirmed";
-  };
-
-  const parseStoredSchedule = (raw: string, source: "draft" | "confirmed"): StoredSchedule | null => {
+  const parseStoredSchedule = (
+    raw: string,
+    source: "draft" | "confirmed",
+  ): StoredSchedule | null => {
     try {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === "object") {
+        const version = (parsed as { version?: number }).version ?? 0;
+        const savedAt = typeof (parsed as { savedAt?: string }).savedAt === "string"
+          ? Date.parse((parsed as { savedAt?: string }).savedAt as string)
+          : Number.NaN;
+
         if ("schedule" in parsed) {
-          const savedAt = typeof (parsed as { savedAt?: string }).savedAt === "string"
-            ? Date.parse((parsed as { savedAt?: string }).savedAt as string)
-            : Number.NaN;
           return {
             schedule: (parsed as { schedule: Schedule }).schedule,
+            people: (parsed as { people?: Person[] }).people,
             savedAt: Number.isNaN(savedAt) ? 0 : savedAt,
             source,
           };
         }
 
-        return { schedule: parsed as Schedule, savedAt: 0, source };
+        if (version === 0) {
+          return { schedule: parsed as Schedule, savedAt: 0, source };
+        }
       }
     } catch (error) {
       console.error("Failed to parse stored schedule", error);
@@ -220,6 +229,9 @@ export default function Home() {
     const restored = getMostRecentSchedule();
     if (!restored) {
       return;
+    }
+    if (restored.people) {
+      setPeople(restored.people);
     }
     setSchedule(cloneSchedule(restored.schedule));
     setUndoStack([]);
@@ -530,6 +542,7 @@ export default function Home() {
       version: SCHEDULE_STORAGE_VERSION,
       savedAt: new Date().toISOString(),
       schedule,
+      people,
     };
     window.localStorage.setItem(key, JSON.stringify(payload));
   };
