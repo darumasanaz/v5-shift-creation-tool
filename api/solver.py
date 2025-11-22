@@ -102,7 +102,9 @@ def _build_specific_time_ranges(
     return mapping
 
 
-def solve_shift_scheduling(request: ScheduleRequest):
+def _solve_shift_scheduling(
+    request: ScheduleRequest, relax_monthly_minimums: bool = False
+):
     data = _load_initial_data()
 
     num_days = data["days"]
@@ -177,6 +179,8 @@ def solve_shift_scheduling(request: ScheduleRequest):
         )
 
     model = cp_model.CpModel()
+    weights = data["weights"]
+    penalties: List[cp_model.LinearExpr] = []
 
     work = {}
     for p in range(num_people):
@@ -312,9 +316,22 @@ def solve_shift_scheduling(request: ScheduleRequest):
         )
         recovery_days = sum(night_recovery[p, d] for d in range(num_days))
         paid_leave_count = len(paid_leave_days_by_index.get(p, set()))
-        model.Add(
-            assigned_days + recovery_days + paid_leave_count >= people[p].monthlyMin
-        )
+        lower_bound = assigned_days + recovery_days + paid_leave_count
+        if relax_monthly_minimums:
+            slack = model.NewIntVar(
+                0, people[p].monthlyMin, f"monthly_min_slack_{p}"
+            )
+            model.Add(lower_bound + slack >= people[p].monthlyMin)
+            penalties.append(
+                slack
+                * int(
+                    weights.get(
+                        "W_monthly_min_violation", weights["W_shortage"] * 5
+                    )
+                )
+            )
+        else:
+            model.Add(lower_bound >= people[p].monthlyMin)
         # Treat night-shift recovery days as worked days for both lower and upper
         # monthly limits so "明" contributes to contractual staffing counts.
         model.Add(
@@ -418,11 +435,9 @@ def solve_shift_scheduling(request: ScheduleRequest):
             model.Add(night_recovery[p, d] == 0)
 
     # Soft constraints -----------------------------------------------------
-    penalties: List[cp_model.LinearExpr] = []
     shortage_vars: Dict[Tuple[int, str], cp_model.IntVar] = {}
     need_by_day_label: Dict[Tuple[int, str], int] = {}
 
-    weights = data["weights"]
     shortage_time_range_weights: Dict[str, int] = weights.get(
         "shortageTimeRangeWeights", {}
     )
@@ -578,4 +593,31 @@ def solve_shift_scheduling(request: ScheduleRequest):
                     )
 
     status_name = solver.StatusName(status)
+    return schedule, shortages, coverage_breakdown, status_name, status
+
+
+def solve_shift_scheduling(request: ScheduleRequest):
+    schedule, shortages, coverage_breakdown, status_name, status = (
+        _solve_shift_scheduling(request, relax_monthly_minimums=False)
+    )
+
+    if status != cp_model.INFEASIBLE:
+        return schedule, shortages, coverage_breakdown, status_name
+
+    (
+        fallback_schedule,
+        fallback_shortages,
+        fallback_coverage,
+        fallback_status_name,
+        fallback_status,
+    ) = _solve_shift_scheduling(request, relax_monthly_minimums=True)
+
+    if fallback_status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return (
+            fallback_schedule,
+            fallback_shortages,
+            fallback_coverage,
+            f"{fallback_status_name}_RELAXED_MINIMUMS",
+        )
+
     return schedule, shortages, coverage_breakdown, status_name
