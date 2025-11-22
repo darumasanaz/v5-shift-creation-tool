@@ -342,6 +342,32 @@
       "monthlyMin": 6,
       "monthlyMax": 10,
       "consecMax": 4
+    },
+    {
+      "id": "タイミー1",
+      "canWork": [
+        "EA",
+        "DA"
+      ],
+      "fixedOffWeekdays": [],
+      "weeklyMin": 0,
+      "weeklyMax": 0,
+      "monthlyMin": 0,
+      "monthlyMax": 0,
+      "consecMax": 1
+    },
+    {
+      "id": "タイミー2",
+      "canWork": [
+        "EA",
+        "DA"
+      ],
+      "fixedOffWeekdays": [],
+      "weeklyMin": 0,
+      "weeklyMax": 0,
+      "monthlyMin": 0,
+      "monthlyMax": 0,
+      "consecMax": 1
     }
   ],
   "rules": {
